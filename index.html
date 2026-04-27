@@ -63,6 +63,14 @@
   .badge-amber{background:var(--amber);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
   .badge-green{background:var(--green);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
 
+  /* Tab navigation */
+  .tabs{display:flex;gap:2px;margin:0 0 14px;border-bottom:2px solid var(--mdgrey);overflow-x:auto}
+  .tab{padding:10px 16px;background:#EFF2F5;color:var(--navy);font-weight:bold;font-size:12px;cursor:pointer;border:none;border-radius:4px 4px 0 0;white-space:nowrap;text-transform:uppercase;letter-spacing:.4px;transition:background .15s}
+  .tab:hover{background:#E0E6EB}
+  .tab.active{background:var(--navy);color:#fff}
+  .tab-pane{display:none}
+  .tab-pane.active{display:block}
+
   /* How-to-read panel */
   .howto{background:#fff;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.06);padding:14px 18px;margin-bottom:18px;font-size:12px}
   .howto summary{cursor:pointer;font-size:13px;color:var(--navy);outline:none;padding:2px 0}
@@ -162,54 +170,83 @@
   <div id="banner"></div>
   <div id="criticalAlerts"></div>
 
-  <details class="howto" open>
-    <summary><b>How to read this planner</b> (click to collapse)</summary>
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="summary">Summary</button>
+    <button class="tab" data-tab="heatmap">14-day Heatmap</button>
+    <button class="tab" data-tab="orders">Orders</button>
+    <button class="tab" data-tab="forecast">4-week Forecast</button>
+    <button class="tab" data-tab="recon">Reconciliation</button>
+    <button class="tab" data-tab="help">How to read</button>
+  </nav>
+
+  <!-- SUMMARY TAB -->
+  <section class="tab-pane active" id="pane-summary">
+    <h2>At-risk by customer <span class="count" id="byCustomerCount"></span></h2>
+    <div class="h2-sub">Open SO lines that won't ship in full, grouped by customer and sorted by priority (Woolworths → Coles → Metcash → Amazon → Other). One-click email draft for each customer.</div>
+    <div class="panel" id="byCustomerPanel"></div>
+
+    <h2>Recommended actions</h2>
+    <div class="h2-sub">Concrete next moves per at-risk SKU. Specific options the production scheduler or sales team can act on today.</div>
+    <div class="panel" id="actionsPanel"></div>
+  </section>
+
+  <!-- HEATMAP TAB -->
+  <section class="tab-pane" id="pane-heatmap">
+    <h2>Stock-on-hand heatmap (start of day)</h2>
+    <div class="h2-sub">For each SKU on each day, the units of finished goods physically available at the start of that day. Walks forward from today's NetSuite stock, adding planned production and subtracting that day's shipments. Stock never goes below zero; any unshippable demand carries forward to the next day. <span class="lg-green">Green</span> = stock + that day's production covers shipments comfortably. <span class="lg-amber">Amber</span> = covers exactly, no buffer. <span class="lg-red">Red</span> = shortfall, can't ship in full. <span class="lg-grey">Grey</span> = no demand that day. Hover for the full breakdown.</div>
+    <div class="panel" id="heatmapPanel"></div>
+
+    <h2>Shipments-out heatmap (orders + forecast leaving stock each day)</h2>
+    <div class="h2-sub">Same SKU rows and dates, but each cell shows how many units are scheduled to leave stock that day. WW + Coles forecasts use their <i>order_date</i>. Metcash spreads across workdays (no order_date). Confirmed open SOs sit on their <i>ship_date</i>. Per-day = MAX(forecast, SOs) so a confirmed SO doesn't double-count against the same forecasted volume. Cell colour reflects whether that day's shipment is comfortable, tight, or unshippable from same-day production + stock buffer.</div>
+    <div class="panel" id="demandPanel"></div>
+
+    <h2>Calculation transparency, where every number comes from</h2>
+    <div class="h2-sub">For each SKU, day-by-day walk: SOD stock → +Production → −Demand → EOD stock. Every cell on every other section traces back to these rows.</div>
+    <div class="panel" id="calcPanel"></div>
+  </section>
+
+  <!-- ORDERS TAB -->
+  <section class="tab-pane" id="pane-orders">
+    <h2>Overdue dispatches <span class="count" id="overdueCount"></span></h2>
+    <div class="h2-sub">SOs whose ship_date is past today and have not yet shipped. These need to leave the warehouse first, before any forward-week orders.</div>
+    <div class="panel" id="overduePanel"></div>
+
+    <h2>At-risk orders, today through today + 14 days <span class="count" id="atriskCount"></span></h2>
+    <div class="h2-sub">Per-line view of every SO that won't ship from current stock + planned production. Walks each SKU forward day-by-day. Click any SO number to view in NetSuite.</div>
+    <div class="panel" id="atriskPanel"></div>
+  </section>
+
+  <!-- FORECAST TAB -->
+  <section class="tab-pane" id="pane-forecast">
+    <h2>4-week forecast vs supply per SKU</h2>
+    <div class="h2-sub">Looking 4 weeks ahead. For each week, demand = MAX(retailer forecast for the week, confirmed SOs in the week). Supply = current stock + cumulative production through that week, less SOs that ship before then. Negative = need to build stock or defer.</div>
+    <div class="panel" id="nextweekPanel"></div>
+  </section>
+
+  <!-- RECONCILIATION TAB -->
+  <section class="tab-pane" id="pane-recon">
+    <h2>Reconciliation to NetSuite</h2>
+    <div class="h2-sub">Every Supabase total tied back to its NetSuite source with click-through links. Stock goes to NS Report 752; open SOs go to saved search 6137.</div>
+    <div class="panel" id="reconPanel"></div>
+
+    <h2>Data freshness</h2>
+    <div class="h2-sub">When was each data source last refreshed. Stock + open SOs sync hourly from NS. Retailer forecasts arrive by email and parse into Supabase. Stale forecast = retailer hasn't sent in a while.</div>
+    <div class="panel"><div class="fresh-grid" id="freshGrid"></div></div>
+  </section>
+
+  <!-- HELP TAB -->
+  <section class="tab-pane" id="pane-help">
     <div class="howto-body">
       <p><b>Who it's for:</b> Pureau fulfilment + sales teams. Answers a single question — over the next 14 days, will every order ship in full?</p>
       <p><b>Production assumption:</b> 10L Cask = 11,520 units/day weekday (120 pallets at 96 UPP, target across HMPS + Line A). 5L Cask = 0 (Line B out 13/04 to 13/06). 2L = 1,670/day; 600ml 12pk = 2,948; 600ml 6pk = 4,120 — all from W14-W17 NS Build 4-week average. Saturday = half rate for cask SKUs only; bottle lines weekday-only. Sundays + public holidays = 0.</p>
       <p><b>Demand sources:</b> WW + Coles forecasts use the <i>order_date</i> from each forecast row (their actual dispatch date). Metcash forecasts have no order_date so spread across workdays of the week. Confirmed open SOs sit on their <i>ship_date</i>. Per-day demand = MAX(forecast on that day, SOs on that day) to avoid double-counting where an SO confirms a forecasted volume. If a forecast or SO falls on a public holiday or weekend, it shifts forward to the next workday (we can't dispatch).</p>
       <p><b>Heatmap cells:</b> top number = start-of-day stock (real, never goes below zero). Small "↓N" underneath = total shipments leaving stock that day. If demand exceeds supply, cell shows "↓demand (−short)" and the unshipped portion carries forward as extra demand the next day.</p>
       <p><b>Cell colours:</b> <span class="lg-green">green</span> stock + production covers demand with buffer · <span class="lg-amber">amber</span> covers exactly, no buffer · <span class="lg-red">red</span> shortfall, can't ship in full · <span class="lg-grey">grey</span> no demand that day.</p>
-      <p><b>Reconciliation:</b> every figure on this page can be traced. Click any SO number to open the source in NetSuite. The Reconciliation section ties Supabase totals back to NS Report 752 and saved search 6137.</p>
+      <p><b>Reconciliation:</b> every figure on this page can be traced. Click any SO number to open the source in NetSuite. The Reconciliation tab ties Supabase totals back to NS Report 752 and saved search 6137.</p>
       <p><b>Refresh:</b> page auto-refreshes every 5 minutes from Supabase. Underlying NS sync runs hourly Mon-Fri 06:00-20:00 + 3x Saturday.</p>
+      <p><b>Tab navigation:</b> click any tab above to jump to that view. Tabs are independent — switching tabs doesn't reload data.</p>
     </div>
-  </details>
-
-  <h2>At-risk by customer <span class="count" id="byCustomerCount"></span></h2>
-  <div class="h2-sub">Open SO lines that won't ship in full, grouped by customer and sorted by priority (Woolworths → Coles → Metcash → Amazon → Other). One-click email draft for each customer.</div>
-  <div class="panel" id="byCustomerPanel"></div>
-
-  <h2>Recommended actions</h2>
-  <div class="h2-sub">Concrete next moves per at-risk SKU. Specific options the production scheduler or sales team can act on today.</div>
-  <div class="panel" id="actionsPanel"></div>
-
-  <h2>Overdue dispatches <span class="count" id="overdueCount"></span></h2>
-  <div class="h2-sub">SOs whose ship_date is past today and have not yet shipped. These need to leave the warehouse first, before any forward-week orders.</div>
-  <div class="panel" id="overduePanel"></div>
-
-  <h2>At-risk orders, today through today + 14 days <span class="count" id="atriskCount"></span></h2>
-  <div class="h2-sub">Per-line view of every SO that won't ship from current stock + planned production. Walks each SKU forward day-by-day. Click any SO number to view in NetSuite.</div>
-  <div class="panel" id="atriskPanel"></div>
-
-  <h2>14-day stock + demand heatmap</h2>
-  <div class="h2-sub">For each SKU on each day: top number = start-of-day stock; small ↓N underneath = shipments leaving that day. Red cell = unshippable shortfall (carries forward to next day). Hover any cell for the full breakdown.</div>
-  <div class="panel" id="heatmapPanel"></div>
-
-  <h2>4-week forecast vs supply per SKU</h2>
-  <div class="h2-sub">Looking 4 weeks ahead. For each week, demand = MAX(retailer forecast for the week, confirmed SOs in the week). Supply = current stock + cumulative production through that week, less SOs that ship before then. Negative = need to build stock or defer.</div>
-  <div class="panel" id="nextweekPanel"></div>
-
-  <h2>Calculation transparency, where every number comes from</h2>
-  <div class="h2-sub">For each SKU, day-by-day walk: SOD stock → +Production → −Demand → EOD stock. Every cell on every other section traces back to these rows.</div>
-  <div class="panel" id="calcPanel"></div>
-
-  <h2>Reconciliation to NetSuite</h2>
-  <div class="h2-sub">Every Supabase total tied back to its NetSuite source with click-through links. Stock goes to NS Report 752; open SOs go to saved search 6137.</div>
-  <div class="panel" id="reconPanel"></div>
-
-  <h2>Data freshness</h2>
-  <div class="h2-sub">When was each data source last refreshed. Stock + open SOs sync hourly from NS. Retailer forecasts arrive by email and parse into Supabase. Stale forecast = retailer hasn't sent in a while.</div>
-  <div class="panel"><div class="fresh-grid" id="freshGrid"></div></div>
+  </section>
 </main>
 
 <footer>
@@ -230,25 +267,24 @@ const NS_TRAN_SEARCH = (tranid) => NS_BASE + '/app/common/search/global.nl?text=
 const SKUS = ['10L Cask','5L Cask','2L Bottle','600ml 12pk','600ml 6pk'];
 const UPP = {'10L Cask':96,'5L Cask':60,'2L Bottle':64,'600ml 12pk':126,'600ml 6pk':252};
 
-// Production run rates per weekday. Rob's stated targets 27/04/2026, with W14-W17 NS Build averages
-// shown alongside as historical reference.
+// Production run rates per weekday. Sources: Rob's stated targets + W14-W17 NS Build averages.
+// 5L Cask: Line A alternates between 10L and 5L during the Line B outage. Use W14-W17 actual
+// average (1,884/d = 31 pal/d) which already reflects the outage operating pattern.
 const ACTUAL_RATE_UNITS_PER_WEEKDAY = {
-  '10L Cask':   11520,  // Rob target: 120 pal/day × 96 UPP (W14-W17 hist 161 pal/d included catch-up)
-  '5L Cask':       0,   // Line B out 13/04-13/06; no 5L production
-  '2L Bottle':  1670,   // W14-W17 hist 26 pal/d
-  '600ml 12pk': 2948,   // W14-W17 hist 23 pal/d
-  '600ml 6pk':  4120,   // W14-W17 hist 16 pal/d
+  '10L Cask':   11520,  // Rob target 27/04: 120 pal/day × 96 UPP (HMPS + Line A)
+  '5L Cask':     1884,  // W14-W17 actual avg 31 pal/d (Line A alternates 10L/5L during outage)
+  '2L Bottle':   1670,  // W14-W17 actual avg 26 pal/d
+  '600ml 12pk':  2948,  // W14-W17 actual avg 23 pal/d
+  '600ml 6pk':   4120,  // W14-W17 actual avg 16 pal/d
 };
-// Saturday production runs at half weekday rate (single shift on HMPS + Line A only for Cask SKUs;
-// SM Bottle and EP New Line do not run Saturday by default per the existing planner).
 const SATURDAY_RATE_UNITS = {
   '10L Cask':    Math.round(ACTUAL_RATE_UNITS_PER_WEEKDAY['10L Cask'] / 2),  // 5,760
-  '5L Cask':     0,
+  '5L Cask':     Math.round(ACTUAL_RATE_UNITS_PER_WEEKDAY['5L Cask'] / 2),   // 942
   '2L Bottle':   0,
   '600ml 12pk':  0,
   '600ml 6pk':   0,
 };
-const RATE_SOURCE_NOTE = 'Rob stated target 27/04/2026: 10L = 120 pal/day across HMPS + Line A. 2L/600ml = W14-W17 NS Build 4-week average. 5L = 0 during Line B outage.';
+const RATE_SOURCE_NOTE = 'Rob stated target 27/04: 10L = 120 pal/day across HMPS + Line A. 5L = W14-W17 actual avg (Line A alternates 10L/5L during Line B outage). 2L/600ml = W14-W17 NS Build 4-week average.';
 
 const LINE_B_OUTAGE_START = '2026-04-13';
 const LINE_B_OUTAGE_END   = '2026-06-13';
@@ -300,9 +336,6 @@ function dailyCapacity(sku, dateObj){
   const dow = dateObj.getDay();
   if(dow === 0) return 0;
   if(PUBLIC_HOLIDAYS.has(iso)) return 0;
-  const inOutage = iso >= LINE_B_OUTAGE_START && iso <= LINE_B_OUTAGE_END;
-  // 5L Cask production is from Line B only; during outage, zero.
-  if(sku === '5L Cask' && inOutage) return 0;
   if(dow === 6) return SATURDAY_RATE_UNITS[sku] || 0;
   return ACTUAL_RATE_UNITS_PER_WEEKDAY[sku] || 0;
 }
@@ -587,8 +620,10 @@ function render(){
   renderByCustomer(atRisk, overdue);
   renderActions(atRisk, overdue, nextWeekRows);
 
-  // Stock + demand combined heatmap (14-day, start of day stock + that day's demand)
+  // Stock heatmap (14-day, start-of-day stock walking forward)
   renderHeatmap();
+  // Shipments-out heatmap (units leaving stock each day, parallel layout)
+  renderDemand();
 
   // Calculation transparency
   renderCalc();
@@ -631,8 +666,8 @@ function renderCritical(){
   if(today >= LINE_B_OUTAGE_START && today <= LINE_B_OUTAGE_END){
     const remaining = Math.round((new Date(LINE_B_OUTAGE_END) - new Date(today))/86400000);
     alerts.push({
-      title: '5L Cask: Line B out — production paused',
-      detail: `Line B is out for the shed move from ${LINE_B_OUTAGE_START} to ${LINE_B_OUTAGE_END} (${remaining} days remaining). Zero 5L production possible from the current line config. All 5L orders during this window depend on existing stock (currently ${fmt(getStockFor('5L Cask'))} units).`
+      title: '5L Cask: Line B out, Line A sharing 10L + 5L',
+      detail: `Line B is out for the shed move from ${LINE_B_OUTAGE_START} to ${LINE_B_OUTAGE_END} (${remaining} days remaining). 5L production runs on Line A alternating with 10L. Planner uses the W14-W17 actual rate of ~1,884 5L units/day. Current 5L stock: ${fmt(getStockFor('5L Cask'))} units.`
     });
   }
   // Forecast staleness > 14 days
@@ -1003,13 +1038,8 @@ function renderHeatmap(){
       const shortStr = short > 0 ? `\nSHORT ${fmt(short)} units cannot ship today (will carry forward)` : '';
       const tip = `${sku} ${fmtDate(d)}\nStart-of-day stock: ${fmt(sod)}\nProduction: ${fmt(prod)}${carryStr}\nDemand today: ${fmt(demRaw)}\nTotal to ship: ${fmt(dem)}\nActually shipped: ${fmt(shipped)}\nEnd-of-day stock: ${fmt(eod)}${shortStr}`;
 
-      // Cell content: top line = SOD stock, bottom = demand with shortfall flag if any
-      const demLine = dem > 0
-        ? (short > 0
-            ? `<div style="font-size:9px;font-weight:bold;margin-top:2px">↓${fmt(dem)} (−${fmt(short)})</div>`
-            : `<div style="font-size:9px;font-weight:normal;opacity:.85;margin-top:2px">↓${fmt(dem)}</div>`)
-        : '';
-      html += `<td class="cell ${cls}${we}" title="${tip}"><div>${fmt(sod)}</div>${demLine}</td>`;
+      // Single number per cell: SOD stock. Shipments-out shown in the dedicated heatmap below.
+      html += `<td class="cell ${cls}${we}" title="${tip}">${fmt(sod)}</td>`;
 
       sod = eod;
       carry = short;
@@ -1204,6 +1234,23 @@ function exportCsv(which){
   URL.revokeObjectURL(url);
 }
 window.exportCsv = exportCsv;
+
+// Tab switching
+document.querySelectorAll('#tabs .tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = btn.dataset.tab;
+    document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + target));
+    // Hash for shareable links
+    history.replaceState(null, '', '#' + target);
+  });
+});
+// Honour hash on load
+if(location.hash){
+  const target = location.hash.slice(1);
+  const btn = document.querySelector(`#tabs .tab[data-tab="${target}"]`);
+  if(btn) btn.click();
+}
 
 // Auto-refresh every 5 minutes
 setInterval(load, 5 * 60 * 1000);
