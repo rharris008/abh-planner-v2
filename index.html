@@ -285,20 +285,28 @@ const HISTORICAL_SALES_W14_W17 = {
   '600ml 6pk':  {W14:14112, W15:10080, W16:16632, W17:27216},
 };
 
+// Lines available on Saturday per the existing planner (HMPS + Line A + Line B).
+// Other lines (SM Bottle, EP new line) do NOT run Saturday by default.
+const SATURDAY_LINES = new Set(['HMPS - Dual','HMPS - Single','Line A','Line B']);
+
 // Compute daily production capacity (units) for a SKU on a given Date.
 // Uses PLAN_TARGETS × UPP × shifts/day, honouring weekends, public holidays, Line B outage.
+// Saturday-aware: HMPS + Line A + Line B run Saturday at SHIFTS_PER_SATURDAY (1 shift).
 function dailyCapacityFor(sku, dateObj){
   const iso = isoDate(dateObj);
   const dow = dateObj.getDay();
   if(dow === 0) return 0; // Sunday — no production
   if(PUBLIC_HOLIDAYS.has(iso)) return 0;
   const upp = UPP[sku] || 1;
-  const shifts = (dow === 6) ? SHIFTS_PER_SATURDAY : SHIFTS_PER_WEEKDAY;
+  const isSaturday = (dow === 6);
+  const shifts = isSaturday ? SHIFTS_PER_SATURDAY : SHIFTS_PER_WEEKDAY;
   let palShift = 0;
   const inOutage = iso >= LINE_B_OUTAGE_START && iso <= LINE_B_OUTAGE_END;
   (SKU_LINES[sku] || []).forEach(line => {
     // Line B is unavailable during the outage window
     if(line === 'Line B' && inOutage) return;
+    // On Saturday only HMPS + Line A + Line B run; SM Bottle and EP New Line are weekdays-only
+    if(isSaturday && !SATURDAY_LINES.has(line)) return;
     const tgt = (PLAN_TARGETS[line] || {})[sku];
     if(tgt) palShift += tgt;
   });
