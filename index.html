@@ -223,7 +223,15 @@ const HORIZON_DAYS = 14;
 // ── HELPERS ──
 const fmt = n => n==null||isNaN(n) ? '0' : Math.round(Number(n)).toLocaleString('en-AU');
 const fmtSign = n => { const v = Math.round(Number(n)||0); return v >= 0 ? `+${v.toLocaleString('en-AU')}` : v.toLocaleString('en-AU'); };
-function isoDate(d){ return d.toISOString().slice(0,10); }
+function isoDate(d){
+  // Use LOCAL date components, not UTC. Sydney is +10/+11 so toISOString slips dates by one
+  // (Mon 27/04 00:00 AEST → Sun 26/04 14:00 UTC → '2026-04-26' from toISOString).
+  // That made the public-holiday check miss today and pushed forecast spread onto today by mistake.
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
+}
 function fmtDate(d){
   const dd = String(d.getDate()).padStart(2,'0');
   const mm = String(d.getMonth()+1).padStart(2,'0');
