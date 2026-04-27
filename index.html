@@ -194,25 +194,25 @@ const NS_TRAN_SEARCH = (tranid) => NS_BASE + '/app/common/search/global.nl?text=
 const SKUS = ['10L Cask','5L Cask','2L Bottle','600ml 12pk','600ml 6pk'];
 const UPP = {'10L Cask':96,'5L Cask':60,'2L Bottle':64,'600ml 12pk':126,'600ml 6pk':252};
 
-// Actual production run rates per weekday, derived from NS Build records W14-W17 (28 Mar - 24 Apr 2026, 4 weeks).
-// These are REAL operating rates, not theoretical line capacity. Source: SuiteQL on transaction.Build.
+// Production run rates per weekday. Rob's stated targets 27/04/2026, with W14-W17 NS Build averages
+// shown alongside as historical reference.
 const ACTUAL_RATE_UNITS_PER_WEEKDAY = {
-  '10L Cask':   15429,  // 161 pal/day average (range 114 to 196 across W14-W17)
-  '5L Cask':     1884,  // 31 pal/day, suppressed by shed move Line B outage
-  '2L Bottle':   1670,  // 26 pal/day
-  '600ml 12pk':  2948,  // 23 pal/day
-  '600ml 6pk':   4120,  // 16 pal/day
+  '10L Cask':   11520,  // Rob target: 120 pal/day × 96 UPP (W14-W17 hist 161 pal/d included catch-up)
+  '5L Cask':       0,   // Line B out 13/04-13/06; no 5L production
+  '2L Bottle':  1670,   // W14-W17 hist 26 pal/d
+  '600ml 12pk': 2948,   // W14-W17 hist 23 pal/d
+  '600ml 6pk':  4120,   // W14-W17 hist 16 pal/d
 };
 // Saturday production runs at half weekday rate (single shift on HMPS + Line A only for Cask SKUs;
 // SM Bottle and EP New Line do not run Saturday by default per the existing planner).
 const SATURDAY_RATE_UNITS = {
-  '10L Cask':    Math.round(ACTUAL_RATE_UNITS_PER_WEEKDAY['10L Cask'] / 2),  // ~7,715
-  '5L Cask':     Math.round(ACTUAL_RATE_UNITS_PER_WEEKDAY['5L Cask'] / 2),
+  '10L Cask':    Math.round(ACTUAL_RATE_UNITS_PER_WEEKDAY['10L Cask'] / 2),  // 5,760
+  '5L Cask':     0,
   '2L Bottle':   0,
   '600ml 12pk':  0,
   '600ml 6pk':   0,
 };
-const RATE_SOURCE_NOTE = 'NS Build records, W14-W17 (28 Mar to 24 Apr 2026, 4 weeks, 20 weekdays)';
+const RATE_SOURCE_NOTE = 'Rob stated target 27/04/2026: 10L = 120 pal/day across HMPS + Line A. 2L/600ml = W14-W17 NS Build 4-week average. 5L = 0 during Line B outage.';
 
 const LINE_B_OUTAGE_START = '2026-04-13';
 const LINE_B_OUTAGE_END   = '2026-06-13';
