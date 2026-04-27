@@ -943,22 +943,39 @@ function renderHeatmap(){
   SKUS.forEach(sku => {
     const dailyDemand = buildDailyDemand(sku, days);
     let sod = getStockFor(sku);
+    let carry = 0; // unshipped demand rolling forward
     html += `<tr><td class="skuname">${sku}</td>`;
     days.forEach(d => {
       const dIso = isoDate(d);
-      const dem = dailyDemand[dIso] || 0;
+      const demRaw = dailyDemand[dIso] || 0;
+      const dem = demRaw + carry; // include any backlog from previous unshippable days
       const prod = (dIso === todayIso) ? 0 : dailyCapacity(sku, d);
+      const supply = sod + prod;
+      let shipped, eod, short;
+      if(supply >= dem){ shipped = dem; eod = supply - dem; short = 0; }
+      else { shipped = supply; eod = 0; short = dem - supply; }
+
       let cls;
-      if(dem === 0 && sod >= 0){ cls = 'grey'; }
-      else if(sod + prod < dem){ cls = 'red'; }
-      else if((sod + prod) < dem * 1.2){ cls = 'amber'; }
+      if(dem === 0){ cls = 'grey'; }
+      else if(short > 0){ cls = 'red'; }
+      else if(supply < dem * 1.2){ cls = 'amber'; }
       else { cls = 'green'; }
       const we = (d.getDay()===0||d.getDay()===6) ? ' weekend' : '';
-      const tip = `${sku} ${fmtDate(d)}\nStart-of-day stock: ${fmt(sod)}\nDemand: ${fmt(dem)}\nProduction: ${fmt(prod)}\nEnd-of-day stock: ${fmt(sod+prod-dem)}`;
-      // Two-line cell: top = SOD stock (big), bottom = demand (small, with arrow)
-      const demStr = dem > 0 ? `<div style="font-size:9px;font-weight:normal;opacity:.85;margin-top:2px">↓${fmt(dem)}</div>` : '';
-      html += `<td class="cell ${cls}${we}" title="${tip}"><div>${fmt(sod)}</div>${demStr}</td>`;
-      sod = sod + prod - dem;
+
+      const carryStr = carry > 0 ? `\nCarried-forward shortfall from previous days: ${fmt(carry)}` : '';
+      const shortStr = short > 0 ? `\nSHORT ${fmt(short)} units cannot ship today (will carry forward)` : '';
+      const tip = `${sku} ${fmtDate(d)}\nStart-of-day stock: ${fmt(sod)}\nProduction: ${fmt(prod)}${carryStr}\nDemand today: ${fmt(demRaw)}\nTotal to ship: ${fmt(dem)}\nActually shipped: ${fmt(shipped)}\nEnd-of-day stock: ${fmt(eod)}${shortStr}`;
+
+      // Cell content: top line = SOD stock, bottom = demand with shortfall flag if any
+      const demLine = dem > 0
+        ? (short > 0
+            ? `<div style="font-size:9px;font-weight:bold;margin-top:2px">↓${fmt(dem)} (−${fmt(short)})</div>`
+            : `<div style="font-size:9px;font-weight:normal;opacity:.85;margin-top:2px">↓${fmt(dem)}</div>`)
+        : '';
+      html += `<td class="cell ${cls}${we}" title="${tip}"><div>${fmt(sod)}</div>${demLine}</td>`;
+
+      sod = eod;
+      carry = short;
     });
     html += '</tr>';
   });
