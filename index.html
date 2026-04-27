@@ -270,6 +270,18 @@ function customerKey(custName){
 // ── DATA LOAD ──
 let DATA = {};
 
+// Defensive units derivation: some forecast tables (Metcash) only have pallets, not units.
+// Backfill units = pallets × UPP. Applied at load time so all downstream code is units-clean.
+function backfillUnits(rows){
+  rows.forEach(r => {
+    if((r.units == null || Number(r.units) === 0) && r.pallets != null && r.sku && UPP[r.sku]){
+      r.units = Math.round(Number(r.pallets) * UPP[r.sku]);
+      r._units_derived = true;
+    }
+  });
+  return rows;
+}
+
 async function load(){
   try {
     const [stock, orders, coles, ww, metcash, holidays] = await Promise.all([
@@ -282,7 +294,11 @@ async function load(){
     ]);
     DATA.stock = stock;
     DATA.orders = orders;
-    DATA.forecasts = {coles, ww, metcash};
+    DATA.forecasts = {
+      coles: backfillUnits(coles),
+      ww: backfillUnits(ww),
+      metcash: backfillUnits(metcash),
+    };
     PUBLIC_HOLIDAYS = new Set((holidays||[]).map(h => h.date));
     document.getElementById('lastUpdated').textContent = 'Refreshed ' + new Date().toLocaleString('en-AU');
     render();
@@ -939,12 +955,38 @@ function renderRecon(){
   html += '</tbody></table>';
 
   // Forecast recon
-  html += '<table style="margin-top:14px"><thead><tr><th colspan="4" style="background:var(--ltgrey);color:var(--navy);font-size:12px;padding:8px 10px;text-transform:none;letter-spacing:0">Retailer forecasts (sent by email, parsed by attachment_router into Supabase)</th></tr>';
-  html += '<tr><th>Retailer</th><th class="right">Forecast rows in Supabase</th><th class="right">Total units (all forward weeks)</th><th>Last received</th></tr></thead><tbody>';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const dow = today.getDay();
+  const daysToMonday = (dow === 0) ? 1 : (dow === 1 ? 0 : (8 - dow) % 7);
+  const thisMonday = new Date(today); thisMonday.setDate(today.getDate() + daysToMonday - 7);
+  const thisSunday = new Date(thisMonday); thisSunday.setDate(thisMonday.getDate() + 6);
+  const thisMondayIso = isoDate(thisMonday);
+  const thisSundayIso = isoDate(thisSunday);
+  const fourWeekEndIso = isoDate(new Date(thisMonday.getTime() + 28*86400000 - 1));
+
+  html += '<table style="margin-top:14px"><thead><tr><th colspan="6" style="background:var(--ltgrey);color:var(--navy);font-size:12px;padding:8px 10px;text-transform:none;letter-spacing:0">Retailer forecasts (sent by email, parsed by attachment_router into Supabase)</th></tr>';
+  html += `<tr><th>Retailer</th><th>Last received</th><th class="right">Weeks ahead</th><th class="right">This week (${fmtDate(thisMonday)} – ${fmtDate(thisSunday)})</th><th class="right">Next 4 weeks total</th><th class="right">Beyond 4 weeks</th></tr></thead><tbody>`;
   Object.entries(fcByRetailer).forEach(([retailer, rows]) => {
-    const units = rows.reduce((s,r) => s + (Number(r.units)||0), 0);
     const last = rows.reduce((m,r) => (r.updated_at && (!m || r.updated_at > m)) ? r.updated_at : m, null);
-    html += `<tr><td class="sku">${retailer}</td><td class="right">${rows.length}</td><td class="right">${fmt(units)}</td><td>${last ? new Date(last).toLocaleDateString('en-AU') : '—'}</td></tr>`;
+    const weekDates = new Set(rows.map(r => r.week_date && r.week_date.slice(0,10)).filter(Boolean));
+    const futureWeeks = [...weekDates].filter(w => w >= thisMondayIso).length;
+    let thisWeek = 0, fourWeek = 0, beyond = 0;
+    rows.forEach(r => {
+      if(!r.week_date) return;
+      const w = r.week_date.slice(0,10);
+      const u = Number(r.units)||0;
+      if(w >= thisMondayIso && w <= thisSundayIso) thisWeek += u;
+      if(w >= thisMondayIso && w <= fourWeekEndIso) fourWeek += u;
+      if(w > fourWeekEndIso) beyond += u;
+    });
+    html += `<tr>
+      <td class="sku">${retailer}</td>
+      <td>${last ? new Date(last).toLocaleDateString('en-AU') : '—'}</td>
+      <td class="right">${futureWeeks}</td>
+      <td class="right">${fmt(thisWeek)}</td>
+      <td class="right">${fmt(fourWeek)}</td>
+      <td class="right">${fmt(beyond)}</td>
+    </tr>`;
   });
   html += '</tbody></table>';
 
