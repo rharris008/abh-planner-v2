@@ -137,6 +137,20 @@
   .action-item.warn{border-left-color:var(--amber);background:#FFF9F0}
   .action-item-title{font-weight:bold;color:var(--navy);margin-bottom:3px}
   .action-item-detail{color:#555;font-size:11px}
+
+  /* Freshness panel */
+  .fresh-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+  .fresh-card{background:#fff;padding:10px 12px;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.06);border-left:4px solid var(--green)}
+  .fresh-card.stale{border-left-color:var(--amber)}
+  .fresh-card.dead{border-left-color:var(--red)}
+  .fresh-label{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:#777;margin-bottom:3px}
+  .fresh-value{font-size:13px;font-weight:bold;color:var(--navy)}
+  .fresh-age{font-size:10px;color:#888}
+
+  /* Export button */
+  .export-bar{display:flex;justify-content:flex-end;margin-bottom:8px;gap:8px}
+  .export-btn{padding:5px 12px;font-family:Arial;font-size:11px;background:var(--blue);color:#fff;border:none;border-radius:3px;cursor:pointer}
+  .export-btn:hover{opacity:.9}
 </style>
 </head>
 <body>
@@ -150,6 +164,9 @@
 <main>
   <div id="status" class="status">Loading data from Supabase…</div>
 
+  <h2>Data freshness</h2>
+  <div class="fresh-grid" id="freshness"></div>
+
   <h2>At a glance</h2>
   <div class="tiles" id="tiles"></div>
 
@@ -157,6 +174,9 @@
   <div class="cover-grid" id="coverGrid"></div>
 
   <h2>14-day delivery feasibility</h2>
+  <div class="export-bar">
+    <button class="export-btn" id="exportCsv">Export heatmap CSV</button>
+  </div>
   <div class="heatmap">
     <table class="heat" id="heatTable"></table>
     <div class="legend">
@@ -210,34 +230,85 @@ const SKUS = ['10L Cask','5L Cask','2L Bottle','600ml 12pk','600ml 6pk'];
 const HORIZON_DAYS = 14;
 const PROJECTION_DAYS = 28;
 
-// Average daily production rate per SKU, per weekday.
-// Calculated from live NetSuite Build records W14-W17 (28 Mar - 24 Apr 2026), 20 weekdays.
-// These are real run rates, not theoretical maxes. They reflect current shed-move
-// constraints (e.g. 5L is throttled because Cask Line A is sharing power with B's removal).
-const DAILY_PROD_RATE = {
-  '10L Cask':   15429,  // (54624+70478+94164+89304)/20
-  '5L Cask':     1884,  // (12120+6360+13620+5580)/20  -- shed-move suppressed
-  '2L Bottle':   1670,  // (7936+7232+5248+12992)/20
-  '600ml 12pk':  2948,  // (10458+16884+16506+15120)/20
-  '600ml 6pk':   4120,  // (19908+10836+30744+20916)/20
+// Authoritative configs — copied from the existing planner (planner.abhgroup.com.au).
+// Single source of truth so v2 daily views stay consistent with the weekly planner.
+const UPP = {'10L Cask':96,'5L Cask':60,'2L Bottle':64,'600ml 12pk':126,'600ml 6pk':252};
+
+// Planned pallets per shift by line config
+const PLAN_TARGETS = {
+  'Line A':         {'10L Cask': 40},
+  'Line B':         {'5L Cask': 35, '10L Cask': 40},
+  'SM Bottle line': {'2L Bottle': 52},
+  'HMPS - Dual':    {'10L Cask': 80},
+  'HMPS - Single':  {'10L Cask': 40},
+  'EP new line':    {'600ml 12pk': 34, '600ml 6pk': 32},
 };
 
-// Theoretical max per primary line (units/day at full utilisation, used in capacity calendar)
-const LINE_THEORETICAL_MAX = {
-  'HMPS (10L Cask)':       {sku:'10L Cask',    units_per_day: 15360},  // 80 pal/shift × 96 UPP × 2 shifts
-  'Cask Line A (5L/10L)':  {sku:'5L Cask',     units_per_day: 6000},
-  'SM Bottle (2L)':        {sku:'2L Bottle',   units_per_day: 4000},
-  'EP New Line (600ml)':   {sku:'600ml mix',   units_per_day: 7000},
+// Which lines make each SKU under normal operation (used to compute daily capacity per SKU)
+const SKU_LINES = {
+  '10L Cask':   ['HMPS - Dual', 'Line A', 'Line B'],
+  '5L Cask':    ['Line B'],
+  '2L Bottle':  ['SM Bottle line'],
+  '600ml 12pk': ['EP new line'],
+  '600ml 6pk':  ['EP new line'],
 };
 
-// Actual sales by SKU by week W14-W17 (from NS Report 733 via the W02-W17 weekly report).
-// Used for forecast accuracy in the absence of a snapshot table.
+// Line B outage during shed move — Line A only between these dates
+const LINE_B_OUTAGE_START = '2026-04-13';
+const LINE_B_OUTAGE_END   = '2026-06-13';
+
+// Average shifts per weekday at each line (HMPS = 2, others = 2 day+arvo). Saturday = 1 shift.
+const SHIFTS_PER_WEEKDAY = 2;
+const SHIFTS_PER_SATURDAY = 1;
+
+// EP New Line changeover — minutes lost between SKU changes
+const EP_CHANGEOVER_MINS = 45;
+
+// Retailer dispatch offsets (days before need_arrival)
+const WW_DISPATCH_OFFSET = 2;
+const COLES_DISPATCH_OFFSET = 1;
+
+// Public holidays — loaded from Supabase public_holidays table at startup (same source as existing planner)
+let PUBLIC_HOLIDAYS = new Set();
+
+// Actual sales by SKU by week W14-W17 (from NS Report 733). Used for forecast accuracy v1.
+// Tier 2 work: live refresh from a sales_actuals table populated weekly.
 const HISTORICAL_SALES_W14_W17 = {
   '10L Cask':   {W14:74084, W15:74676, W16:74146, W17:93718},
   '5L Cask':    {W14:12420, W15:6360,  W16:6480,  W17:5760},
   '2L Bottle':  {W14:10112, W15:7616,  W16:5696,  W17:11136},
   '600ml 12pk': {W14:13482, W15:14868, W16:10332, W17:18900},
   '600ml 6pk':  {W14:14112, W15:10080, W16:16632, W17:27216},
+};
+
+// Compute daily production capacity (units) for a SKU on a given Date.
+// Uses PLAN_TARGETS × UPP × shifts/day, honouring weekends, public holidays, Line B outage.
+function dailyCapacityFor(sku, dateObj){
+  const iso = isoDate(dateObj);
+  const dow = dateObj.getDay();
+  if(dow === 0) return 0; // Sunday — no production
+  if(PUBLIC_HOLIDAYS.has(iso)) return 0;
+  const upp = UPP[sku] || 1;
+  const shifts = (dow === 6) ? SHIFTS_PER_SATURDAY : SHIFTS_PER_WEEKDAY;
+  let palShift = 0;
+  const inOutage = iso >= LINE_B_OUTAGE_START && iso <= LINE_B_OUTAGE_END;
+  (SKU_LINES[sku] || []).forEach(line => {
+    // Line B is unavailable during the outage window
+    if(line === 'Line B' && inOutage) return;
+    const tgt = (PLAN_TARGETS[line] || {})[sku];
+    if(tgt) palShift += tgt;
+  });
+  return Math.round(palShift * shifts * upp);
+}
+
+// Theoretical max per line for the capacity calendar / what-if (uses HMPS Dual as 10L max)
+const LINE_THEORETICAL_MAX = {
+  'HMPS (10L Cask)':       {sku:'10L Cask',    units_per_day: PLAN_TARGETS['HMPS - Dual']['10L Cask'] * SHIFTS_PER_WEEKDAY * UPP['10L Cask']},
+  'Cask Line A (10L)':     {sku:'10L Cask',    units_per_day: PLAN_TARGETS['Line A']['10L Cask']    * SHIFTS_PER_WEEKDAY * UPP['10L Cask']},
+  'Cask Line B (5L/10L)':  {sku:'5L Cask',     units_per_day: PLAN_TARGETS['Line B']['5L Cask']     * SHIFTS_PER_WEEKDAY * UPP['5L Cask']},
+  'SM Bottle (2L)':        {sku:'2L Bottle',   units_per_day: PLAN_TARGETS['SM Bottle line']['2L Bottle'] * SHIFTS_PER_WEEKDAY * UPP['2L Bottle']},
+  'EP New Line 12pk':      {sku:'600ml 12pk',  units_per_day: PLAN_TARGETS['EP new line']['600ml 12pk']   * SHIFTS_PER_WEEKDAY * UPP['600ml 12pk']},
+  'EP New Line 6pk':       {sku:'600ml 6pk',   units_per_day: PLAN_TARGETS['EP new line']['600ml 6pk']    * SHIFTS_PER_WEEKDAY * UPP['600ml 6pk']},
 };
 
 async function sbGet(path){
@@ -284,38 +355,81 @@ function buildProjectionDays(){
   return days;
 }
 
-// Combine forecasts across retailers, split weekly buckets across the 5 working days of that week
-function expandForecastsToDaily(forecasts, sku, days){
+// Combine forecasts across retailers, but NET against confirmed SOs already placed for the same week.
+// Logic: for each week, demand = MAX(forecast, sum_of_SOs_in_that_week). Avoids double-counting where
+// a retailer has converted forecast to confirmed SO. Spread the resulting weekly demand across working
+// days only (skip weekends and public holidays).
+function expandForecastsToDaily(forecasts, sku, days, orderLines){
   const daily = {};
   days.forEach(d => daily[isoDate(d)] = 0);
 
+  // Group forecasts by Mon-Sun week start for the SKU
+  const fcByWeek = {};
   forecasts.filter(f => f.sku === sku).forEach(f => {
     const weekStart = new Date(f.week_date);
     weekStart.setHours(0,0,0,0);
-    // Spread across Mon-Fri of that week (5 working days)
-    const units = Number(f.units) || 0;
-    const dailyUnits = units / 5;
-    for(let off=0; off<7; off++){
-      const d = new Date(weekStart);
-      d.setDate(weekStart.getDate()+off);
-      // Skip weekends
-      if(d.getDay()===0 || d.getDay()===6) continue;
-      const key = isoDate(d);
-      if(key in daily) daily[key] += dailyUnits;
-    }
+    // Normalise to Monday (NS week_date is typically Monday already)
+    const weekKey = isoDate(weekStart);
+    fcByWeek[weekKey] = (fcByWeek[weekKey] || 0) + (Number(f.units) || 0);
   });
+
+  // Group open SOs by week (using ship_date)
+  const soByWeek = {};
+  if(orderLines){
+    orderLines.filter(l => l.sku === sku && l.ship_date).forEach(l => {
+      const sd = new Date(l.ship_date);
+      sd.setHours(0,0,0,0);
+      // Normalise ship_date to Monday of that week
+      const dow = sd.getDay();
+      const offsetToMon = dow === 0 ? -6 : (1 - dow);
+      const monday = new Date(sd); monday.setDate(sd.getDate() + offsetToMon);
+      const weekKey = isoDate(monday);
+      soByWeek[weekKey] = (soByWeek[weekKey] || 0) + (Number(l.units_ordered) || 0);
+    });
+  }
+
+  // For each week with forecast or SOs, take MAX and spread over working days
+  const allWeekKeys = new Set([...Object.keys(fcByWeek), ...Object.keys(soByWeek)]);
+  allWeekKeys.forEach(weekKey => {
+    const fc = fcByWeek[weekKey] || 0;
+    const so = soByWeek[weekKey] || 0;
+    const weekDemand = Math.max(fc, so);
+    if(weekDemand === 0) return;
+
+    // Determine working days in this week (Mon-Fri minus public holidays) that fall within our horizon
+    const weekStart = new Date(weekKey);
+    weekStart.setHours(0,0,0,0);
+    const workingDays = [];
+    for(let off = 0; off < 7; off++){
+      const d = new Date(weekStart); d.setDate(weekStart.getDate()+off);
+      const dow = d.getDay();
+      if(dow === 0 || dow === 6) continue;
+      if(PUBLIC_HOLIDAYS.has(isoDate(d))) continue;
+      workingDays.push(d);
+    }
+    if(workingDays.length === 0) return;
+
+    // Distribute demand across in-horizon working days; days outside horizon are dropped
+    const inHorizonDays = workingDays.filter(d => isoDate(d) in daily);
+    if(inHorizonDays.length === 0) return;
+    const perDay = weekDemand / workingDays.length;
+    inHorizonDays.forEach(d => { daily[isoDate(d)] += perDay; });
+  });
+
   return daily;
 }
 
-function expandCommittedOrders(orderLines, sku, days){
+// Overdue SOs only — past-dated lines lump onto today. Forward SOs are netted into forecast already.
+function overdueOrdersFor(sku, days, orderLines){
   const daily = {};
   days.forEach(d => daily[isoDate(d)] = 0);
-  orderLines
-    .filter(l => l.sku === sku && l.ship_date)
-    .forEach(l => {
-      const key = l.ship_date.slice(0,10);
-      if(key in daily) daily[key] += (Number(l.units_ordered) || 0);
-    });
+  const todayKey = isoDate(new Date());
+  orderLines.filter(l => l.sku === sku && l.ship_date).forEach(l => {
+    const key = l.ship_date.slice(0,10);
+    if(key < todayKey){
+      daily[todayKey] = (daily[todayKey] || 0) + (Number(l.units_ordered) || 0);
+    }
+  });
   return daily;
 }
 
@@ -405,19 +519,25 @@ let CHART = null;
 
 async function load(){
   try {
-    const [stock, orderLines, coles, ww, metcash] = await Promise.all([
+    const [stock, orderLines, coles, ww, metcash, holidays] = await Promise.all([
       sbGet('stock?select=*'),
       sbGet('open_order_lines?select=*&limit=2000'),
       sbGet('coles_forecast?select=*&limit=2000'),
       sbGet('ww_forecast?select=*&limit=5000'),
       sbGet('metcash_forecast?select=*&limit=5000'),
+      sbGet('public_holidays?select=date').catch(() => []), // graceful if table absent
     ]);
 
     DATA.stock = stock;
     DATA.orders = orderLines;
     DATA.forecasts = [...coles, ...ww, ...metcash];
+    DATA.colesIds = new Set(coles.map(r => r.id));
+    DATA.wwIds = new Set(ww.map(r => r.id));
+    DATA.metcashIds = new Set(metcash.map(r => r.id));
     DATA.days = buildDayList();
     DATA.projDays = buildProjectionDays();
+
+    PUBLIC_HOLIDAYS = new Set((holidays || []).map(h => h.date));
 
     document.getElementById('status').style.display = 'none';
     document.getElementById('lastUpdated').textContent = 'Loaded ' + new Date().toLocaleString('en-AU');
@@ -429,20 +549,22 @@ async function load(){
   }
 }
 
+// Auto-refresh every 5 minutes so a tab left open stays current
+setInterval(() => { load(); }, 5 * 60 * 1000);
+
 function getStockFor(sku){
   const row = DATA.stock.find(s => s.sku === sku);
   return row ? Number(row.units) : 0;
 }
 
 function dailyProductionFor(sku, days){
-  // Apply DAILY_PROD_RATE on weekdays, 0 on weekends. No production today (already today's stock baked in).
-  const rate = DAILY_PROD_RATE[sku] || 0;
+  // Use authoritative PLAN_TARGETS via dailyCapacityFor(). Today's production already baked
+  // into stockNow (NS sync ran this morning), so today's contribution is 0.
   const out = {};
   const todayIso = isoDate(new Date());
   days.forEach(d => {
     const key = isoDate(d);
-    if(key === todayIso) { out[key] = 0; return; } // today is already in stockNow
-    out[key] = isWeekend(d) ? 0 : rate;
+    out[key] = (key === todayIso) ? 0 : dailyCapacityFor(sku, d);
   });
   return out;
 }
@@ -452,8 +574,8 @@ function render(){
   const skuProjections = {};
   SKUS.forEach(sku => {
     const dailyDemand = {};
-    const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days);
-    const co = expandCommittedOrders(DATA.orders, sku, DATA.days);
+    const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days, DATA.orders);
+    const co = overdueOrdersFor(sku, DATA.days, DATA.orders);
     DATA.days.forEach(d => {
       const key = isoDate(d);
       dailyDemand[key] = (fc[key]||0) + (co[key]||0);
@@ -466,6 +588,7 @@ function render(){
     skuProjections[sku] = {dailyDemand, dailyProd, projection, stockNow, cover};
   });
 
+  renderFreshness();
   renderTiles(skuProjections);
   renderCoverGrid(skuProjections);
   renderHeatmap(skuProjections);
@@ -473,7 +596,8 @@ function render(){
   renderCapacity();
   populateWhatIfControls();
   renderForecast();
-  renderActions();
+  renderActions(skuProjections);
+  wireExport();
 }
 
 function renderTiles(skuProj){
@@ -574,8 +698,8 @@ function renderHeatmap(skuProj){
 
 function drillInto(sku){
   const dailyDemand = {};
-  const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.projDays);
-  const co = expandCommittedOrders(DATA.orders, sku, DATA.projDays);
+  const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.projDays, DATA.orders);
+  const co = overdueOrdersFor(sku, DATA.projDays, DATA.orders);
   DATA.projDays.forEach(d => {
     const key = isoDate(d);
     dailyDemand[key] = (fc[key]||0) + (co[key]||0);
@@ -652,6 +776,123 @@ function drillInto(sku){
 window.drillInto = drillInto;
 
 // ============================================================
+// FRESHNESS PANEL — visible "when did each data source last update"
+// ============================================================
+function ageStr(iso){
+  if(!iso) return 'never';
+  const ts = new Date(iso).getTime();
+  const now = Date.now();
+  const mins = Math.round((now - ts) / 60000);
+  if(mins < 60) return `${mins}m ago`;
+  if(mins < 60*24) return `${Math.round(mins/60)}h ago`;
+  return `${Math.round(mins/(60*24))}d ago`;
+}
+
+function freshnessClass(iso, amberHours, redHours){
+  if(!iso) return 'dead';
+  const hours = (Date.now() - new Date(iso).getTime()) / 3600000;
+  if(hours > redHours) return 'dead';
+  if(hours > amberHours) return 'stale';
+  return '';
+}
+
+function latest(rows, dateField){
+  let max = null;
+  rows.forEach(r => {
+    const v = r[dateField];
+    if(v && (!max || v > max)) max = v;
+  });
+  return max;
+}
+
+function renderFreshness(){
+  const stockLatest = latest(DATA.stock, 'updated_at');
+  const ordersLatest = latest(DATA.orders, 'updated_at');
+  const colesLatest = latest(DATA.forecasts.filter(f => DATA.colesIds.has(f.id)), 'updated_at');
+  const wwLatest = latest(DATA.forecasts.filter(f => DATA.wwIds.has(f.id)), 'updated_at');
+  const metcashLatest = latest(DATA.forecasts.filter(f => DATA.metcashIds.has(f.id)), 'updated_at');
+
+  const cards = [
+    {label:'Stock + open SOs', val: ageStr(stockLatest), iso: stockLatest, amber:24, red:48},
+    {label:'Woolworths forecast', val: ageStr(wwLatest), iso: wwLatest, amber:7*24, red:14*24},
+    {label:'Coles forecast', val: ageStr(colesLatest), iso: colesLatest, amber:7*24, red:14*24},
+    {label:'Metcash forecast', val: ageStr(metcashLatest), iso: metcashLatest, amber:7*24, red:14*24},
+  ];
+
+  document.getElementById('freshness').innerHTML = cards.map(c =>
+    `<div class="fresh-card ${freshnessClass(c.iso, c.amber, c.red)}">
+      <div class="fresh-label">${c.label}</div>
+      <div class="fresh-value">${c.val}</div>
+      <div class="fresh-age">${c.iso ? new Date(c.iso).toLocaleString('en-AU') : '—'}</div>
+    </div>`
+  ).join('');
+}
+
+// ============================================================
+// LEAD-TIME / BOTTLENECK CHECK
+// For a SKU with a shortfall on day D, can the responsible line PHYSICALLY produce
+// enough between today and day D to clear it (at theoretical max, weekdays only)?
+// If no, this is a customer-conversation problem, not a production-fix problem.
+// ============================================================
+const SKU_TO_LINE = {
+  '10L Cask': 'HMPS (10L Cask)',
+  '5L Cask': 'Cask Line A (5L/10L)',
+  '2L Bottle': 'SM Bottle (2L)',
+  '600ml 12pk': 'EP New Line (600ml)',
+  '600ml 6pk': 'EP New Line (600ml)',
+};
+
+function maxRecoverable(sku, byDate){
+  // How many units can we MAX produce between today and byDate (weekdays only) at theoretical max?
+  const line = SKU_TO_LINE[sku];
+  const max = (LINE_THEORETICAL_MAX[line] && LINE_THEORETICAL_MAX[line].units_per_day) || 0;
+  // 600ml shares EP New Line capacity, so each gets half of max
+  const share = (sku === '600ml 12pk' || sku === '600ml 6pk') ? 0.5 : 1.0;
+  const today = new Date(); today.setHours(0,0,0,0);
+  let weekdays = 0;
+  const cur = new Date(today);
+  while(cur < byDate){
+    if(cur.getDay() !== 0 && cur.getDay() !== 6) weekdays++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return Math.round(max * share * weekdays);
+}
+
+// ============================================================
+// CSV EXPORT
+// ============================================================
+function wireExport(){
+  const btn = document.getElementById('exportCsv');
+  if(!btn) return;
+  btn.onclick = () => {
+    let csv = 'SKU,' + DATA.days.map(d => d.toLocaleDateString('en-AU')).join(',') + '\n';
+    SKUS.forEach(sku => {
+      const dailyDemand = {};
+      const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days, DATA.orders);
+      const co = overdueOrdersFor(sku, DATA.days, DATA.orders);
+      DATA.days.forEach(d => {
+        const k = isoDate(d);
+        dailyDemand[k] = (fc[k]||0) + (co[k]||0);
+      });
+      const stockNow = getStockFor(sku);
+      const dailyProd = dailyProductionFor(sku, DATA.days);
+      const projection = projectStock(stockNow, dailyDemand, DATA.days, dailyProd);
+      const cells = projection.map(p => {
+        const {cls, shortfall} = classifyDeliveryDay(p);
+        return shortfall > 0 ? `-${shortfall}` : (cls === 'grey' ? '0' : p.sod);
+      });
+      csv += `"${sku}",${cells.join(',')}\n`;
+    });
+    const blob = new Blob([csv], {type: 'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `pureau_planner_heatmap_${isoDate(new Date())}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+}
+
+// ============================================================
 // SECTION 6 — UNFULFILLABLE ORDERS
 // For each open order line, walk forward by ship_date. Decrement projected stock.
 // If the line cannot be fully shipped from projected stock at its ship_date, flag it.
@@ -691,11 +932,14 @@ function renderUnfulfillable(){
     return;
   }
   let html = `<div class="unful-headers"><div>SKU</div><div>Customer / SO</div><div>Ship date</div><div style="text-align:right">Need</div><div style="text-align:right">Short</div></div>`;
+  const todayIso = isoDate(new Date());
   unfulfillable.forEach(u => {
     const cust = (u.line.customer || '').split(':').pop().trim().slice(0, 50);
+    const isOverdue = u.line.ship_date < todayIso;
+    const overdueLabel = isOverdue ? ' <span style="background:var(--red);color:#fff;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:bold">OVERDUE</span>' : '';
     html += `<div class="unful-row">
       <div class="unful-sku">${u.sku}</div>
-      <div class="unful-cust">${cust} <small style="color:#888">${u.line.doc_num||''}</small></div>
+      <div class="unful-cust">${cust} <small style="color:#888">${u.line.doc_num||''}</small>${overdueLabel}</div>
       <div class="unful-date">${fmtDate(new Date(u.line.ship_date))}</div>
       <div class="unful-qty">${fmtNum(u.line.units_ordered)}</div>
       <div class="unful-short">${fmtNum(u.shortfall)}</div>
@@ -792,8 +1036,8 @@ function runWhatIf(line, daysDown, startIso){
   const before = {}; const after = {};
   SKUS.forEach(sku => {
     const dailyDemand = {};
-    const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days);
-    const co = expandCommittedOrders(DATA.orders, sku, DATA.days);
+    const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days, DATA.orders);
+    const co = overdueOrdersFor(sku, DATA.days, DATA.orders);
     DATA.days.forEach(d => {
       const k = isoDate(d);
       dailyDemand[k] = (fc[k]||0) + (co[k]||0);
@@ -809,8 +1053,8 @@ function runWhatIf(line, daysDown, startIso){
   affected.forEach(sku => {
     const rate = DAILY_PROD_RATE[sku] || 0;
     const dailyDemand = {};
-    const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days);
-    const co = expandCommittedOrders(DATA.orders, sku, DATA.days);
+    const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days, DATA.orders);
+    const co = overdueOrdersFor(sku, DATA.days, DATA.orders);
     DATA.days.forEach(d => {
       const k = isoDate(d);
       dailyDemand[k] = (fc[k]||0) + (co[k]||0);
@@ -904,58 +1148,70 @@ function renderForecast(){
 // Synthesise from the other sections: any RED SKU, any unfulfillable order, any
 // AMBER SKU with no scheduled production, any forecast surge.
 // ============================================================
-function renderActions(){
+function renderActions(skuProjections){
   const actions = [];
-  // Build per-SKU snapshot
+
   SKUS.forEach(sku => {
-    const dailyDemand = {};
-    const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days);
-    const co = expandCommittedOrders(DATA.orders, sku, DATA.days);
-    DATA.days.forEach(d => {
-      const k = isoDate(d);
-      dailyDemand[k] = (fc[k]||0) + (co[k]||0);
-    });
-    const stockNow = getStockFor(sku);
-    const cover = daysOfCover(stockNow, dailyDemand, DATA.days);
-    if(cover < 3){
-      actions.push({pri:'urgent', title:`${sku} hits stockout in ${cover} day${cover!==1?'s':''}`, detail:`${fmtNum(stockNow)} units on hand. Schedule a run on the relevant line today.`});
-    } else if(cover < 7){
-      actions.push({pri:'warn', title:`${sku} cover dropping (${cover} days)`, detail:`${fmtNum(stockNow)} units on hand. Plan production within the next 2 days.`});
+    const proj = skuProjections[sku].projection;
+    const firstShortfall = proj.find(p => classifyDeliveryDay(p).shortfall > 0);
+    if(firstShortfall){
+      const {shortfall} = classifyDeliveryDay(firstShortfall);
+      const line = SKU_TO_LINE[sku];
+      const lineCfg = LINE_THEORETICAL_MAX[line];
+      const max = lineCfg ? lineCfg.units_per_day : 0;
+      const share = sku.includes('600ml') ? 0.5 : 1.0;
+      const maxDaily = max * share;
+      const recoverable = maxRecoverable(sku, firstShortfall.date);
+      const dateStr = fmtDate(firstShortfall.date);
+      const rate = DAILY_PROD_RATE[sku] || 0;
+      const daysAtMax = maxDaily > 0 ? Math.ceil(shortfall / maxDaily) : 99;
+
+      if(recoverable >= shortfall){
+        actions.push({
+          pri:'urgent',
+          title:`${sku}: ${fmtNum(shortfall)} units short by ${dateStr}`,
+          detail:`Run ${line} at theoretical max (${fmtNum(maxDaily)}/day) for ${daysAtMax} weekday${daysAtMax>1?'s':''} starting today to clear. Current run rate ${fmtNum(rate)}/day is too low — needs uplift.`
+        });
+      } else {
+        actions.push({
+          pri:'urgent',
+          title:`${sku}: ${fmtNum(shortfall)} units short by ${dateStr} — CANNOT produce in time`,
+          detail:`Even at max ${fmtNum(maxDaily)}/day, ${line} can only make ${fmtNum(recoverable)} units before ${dateStr}. Shortfall of ${fmtNum(shortfall - recoverable)} units must be addressed via customer conversation, allocation, or expedited supply — not production.`
+        });
+      }
+    } else {
+      const firstAmber = proj.find(p => classifyDeliveryDay(p).cls === 'amber');
+      if(firstAmber){
+        actions.push({
+          pri:'warn',
+          title:`${sku} tight on ${fmtDate(firstAmber.date)} (no buffer)`,
+          detail:`Supply just covers demand. Any breakdown or surge becomes a stockout. Consider lifting run rate.`
+        });
+      }
     }
   });
 
-  // Unfulfillable orders → urgent action
-  const horizonEnd = new Date(); horizonEnd.setDate(horizonEnd.getDate() + 14);
-  const linesBySku = {}; SKUS.forEach(s => linesBySku[s] = []);
-  DATA.orders.forEach(l => {
-    if(!l.ship_date) return;
-    if(new Date(l.ship_date) > horizonEnd) return;
-    if(!linesBySku[l.sku]) return;
-    linesBySku[l.sku].push(l);
-  });
-  let unfulCount = 0;
-  SKUS.forEach(sku => {
-    let stock = getStockFor(sku);
-    linesBySku[sku].sort((a,b) => a.ship_date.localeCompare(b.ship_date));
-    linesBySku[sku].forEach(line => {
-      const need = Number(line.units_ordered) || 0;
-      if(stock < need) unfulCount++;
-      stock = Math.max(0, stock - need);
-    });
-  });
-  if(unfulCount > 0){
-    actions.push({pri:'urgent', title:`${unfulCount} open order line${unfulCount>1?'s':''} cannot ship from current stock`, detail:'See Unfulfillable orders section above. Email customers or expedite production.'});
+  // Stale forecast warning
+  const wwLatest = latest(DATA.forecasts.filter(f => DATA.wwIds.has(f.id)), 'updated_at');
+  if(wwLatest){
+    const days = (Date.now() - new Date(wwLatest).getTime()) / 86400000;
+    if(days > 7){
+      actions.push({pri:'warn', title:`Woolworths forecast is ${Math.round(days)} days old`, detail:`Last received ${new Date(wwLatest).toLocaleDateString('en-AU')}. WW typically sends weekly. Chase if not received in next 24h.`});
+    }
   }
-
-  // No scheduled production warning
-  actions.push({pri:'warn', title:'Daily production schedule not populated', detail:'The daily_production_schedule table is empty. Capacity and what-if accuracy will be limited until it is filled. Add the weekly plan to enable production-aware projections.'});
+  const stockLatest = latest(DATA.stock, 'updated_at');
+  if(stockLatest){
+    const hours = (Date.now() - new Date(stockLatest).getTime()) / 3600000;
+    if(hours > 24){
+      actions.push({pri:'warn', title:`Stock sync is ${Math.round(hours)} hours old`, detail:`Stock + open-orders sync runs Mon-Sat 10am via launchd. Investigate stock_order_sync.log if not refreshed.`});
+    }
+  }
 
   const c = document.getElementById('actions');
   if(actions.length === 0){
-    c.innerHTML = '<div class="section-empty">No flagged actions. All SKUs comfortable, all orders shippable.</div>';
+    c.innerHTML = '<div class="section-empty">All SKUs ship in full across the next 14 days. No action needed.</div>';
     return;
   }
-  // Sort urgent first
   const order = {urgent:0, warn:1, info:2};
   actions.sort((a,b) => order[a.pri] - order[b.pri]);
   c.innerHTML = actions.map(a =>
