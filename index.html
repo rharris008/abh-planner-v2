@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ABH Pureau Planner v2</title>
+<link rel="icon" href="favicon.ico">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --navy:#1B2A4A; --red:#C0392B; --amber:#E67E22; --green:#27AE60;
+    --blue:#0E7CCE; --ltgrey:#F5F5F5; --mdgrey:#CCCCCC; --dktext:#333333;
+  }
+  *{box-sizing:border-box}
+  body{font-family:Arial,sans-serif;margin:0;padding:0;background:#FAFAFA;color:var(--dktext);font-size:14px;line-height:1.4}
+  header{background:var(--navy);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+  header img{height:32px}
+  header h1{font-size:18px;margin:0;font-weight:bold}
+  header .ver{font-size:10px;opacity:.6;letter-spacing:.5px;margin-left:8px}
+  header .updated{margin-left:auto;font-size:11px;opacity:.7}
+  main{padding:18px 20px;max-width:1400px;margin:0 auto}
+  h2{font-size:14px;margin:24px 0 10px;color:var(--navy);font-weight:bold;text-transform:uppercase;letter-spacing:.4px}
+
+  /* KPI tiles */
+  .tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px}
+  .tile{background:#fff;border-left:4px solid var(--navy);padding:12px 14px;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.06);cursor:default}
+  .tile.red{border-left-color:var(--red)}
+  .tile.amber{border-left-color:var(--amber)}
+  .tile.green{border-left-color:var(--green)}
+  .tile-label{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:#777;margin-bottom:4px}
+  .tile-value{font-size:24px;font-weight:bold;color:var(--navy);line-height:1.1}
+  .tile.red .tile-value{color:var(--red)}
+  .tile.amber .tile-value{color:var(--amber)}
+  .tile.green .tile-value{color:var(--green)}
+  .tile-sub{font-size:11px;color:#666;margin-top:3px}
+
+  /* Days-of-cover bars */
+  .cover-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px}
+  .cover-card{background:#fff;padding:12px 14px;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .cover-sku{font-size:12px;font-weight:bold;color:var(--navy);margin-bottom:6px}
+  .cover-bar{height:18px;background:var(--ltgrey);border-radius:3px;overflow:hidden;position:relative;border:1px solid #E5E5E5}
+  .cover-fill{height:100%;transition:width .3s ease}
+  .cover-fill.red{background:var(--red)}
+  .cover-fill.amber{background:var(--amber)}
+  .cover-fill.green{background:var(--green)}
+  .cover-meta{display:flex;justify-content:space-between;font-size:11px;color:#666;margin-top:4px}
+  .cover-days{font-weight:bold;color:var(--dktext)}
+
+  /* Heatmap */
+  .heatmap{background:#fff;border-radius:4px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.06);overflow-x:auto}
+  table.heat{border-collapse:collapse;width:100%;font-size:11px}
+  table.heat th,table.heat td{border:1px solid #E5E5E5;padding:6px 4px;text-align:center;min-width:42px}
+  table.heat th{background:var(--navy);color:#fff;font-weight:bold;font-size:10px}
+  table.heat th.sku-col{text-align:left;padding-left:10px;width:120px;min-width:120px}
+  table.heat td.sku-name{text-align:left;padding-left:10px;font-weight:bold;color:var(--navy);background:var(--ltgrey)}
+  table.heat td.day{cursor:pointer;font-weight:bold;color:#fff}
+  table.heat td.day.red{background:var(--red)}
+  table.heat td.day.amber{background:var(--amber)}
+  table.heat td.day.green{background:var(--green)}
+  table.heat td.day.grey{background:#E5E5E5;color:#888}
+  table.heat td.day:hover{outline:2px solid var(--blue)}
+  table.heat th.weekend,table.heat td.weekend{background:#F8F8F8;color:#aaa}
+  table.heat th.today{background:var(--blue)}
+
+  /* SKU drilldown */
+  .drilldown{background:#fff;border-radius:4px;padding:18px;margin-top:18px;box-shadow:0 1px 2px rgba(0,0,0,.06);display:none}
+  .drilldown.active{display:block}
+  .drilldown h3{margin:0 0 10px;color:var(--navy);font-size:16px}
+  .chart-wrap{position:relative;height:340px;margin-bottom:14px}
+  .breakdown{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;font-size:12px}
+  .breakdown-tile{background:var(--ltgrey);padding:8px 10px;border-radius:3px}
+  .breakdown-label{font-size:10px;text-transform:uppercase;color:#777;letter-spacing:.5px}
+  .breakdown-val{font-size:16px;font-weight:bold;color:var(--navy)}
+
+  /* Status & errors */
+  .status{padding:14px 18px;background:#FFF3CD;border:1px solid #FFE69C;border-radius:4px;color:#664D03;margin-bottom:14px;font-size:13px}
+  .status.error{background:#F8D7DA;border-color:#F5C2C7;color:#842029}
+  .legend{display:flex;gap:14px;font-size:11px;margin-top:8px;color:#666}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .legend i{width:12px;height:12px;border-radius:2px;display:inline-block}
+
+  footer{padding:18px 20px;font-size:11px;color:#999;text-align:center;border-top:1px solid #E5E5E5;margin-top:30px}
+</style>
+</head>
+<body>
+
+<header>
+  <img src="abh-logo.png" alt="ABH">
+  <h1>ABH Pureau Planner <span class="ver">v2 prototype</span></h1>
+  <div class="updated" id="lastUpdated">Loading…</div>
+</header>
+
+<main>
+  <div id="status" class="status">Loading data from Supabase…</div>
+
+  <h2>At a glance</h2>
+  <div class="tiles" id="tiles"></div>
+
+  <h2>Days of cover</h2>
+  <div class="cover-grid" id="coverGrid"></div>
+
+  <h2>14-day stockout heatmap</h2>
+  <div class="heatmap">
+    <table class="heat" id="heatTable"></table>
+    <div class="legend">
+      <span><i style="background:var(--green)"></i>Cover &gt;= 7 days</span>
+      <span><i style="background:var(--amber)"></i>3-7 days</span>
+      <span><i style="background:var(--red)"></i>&lt; 3 days or projected stockout</span>
+      <span><i style="background:#E5E5E5"></i>No demand</span>
+      <span><i style="background:var(--blue)"></i>Today</span>
+    </div>
+  </div>
+
+  <div id="drilldown" class="drilldown">
+    <h3 id="drillTitle">SKU detail</h3>
+    <div class="chart-wrap"><canvas id="projChart"></canvas></div>
+    <div class="breakdown" id="breakdown"></div>
+  </div>
+</main>
+
+<footer>
+  ABH Pureau Planner v2 prototype. Data refreshes from live Supabase on every load. Built 27/04/2026.
+</footer>
+
+<script>
+const SB_URL = 'https://yxaebxkkclbjezffmerw.supabase.co';
+const SB_KEY = 'sb_publishable_yLmaFw0myJv-rHuCC2LsHw_WW7d8lJn';
+
+const SKUS = ['10L Cask','5L Cask','2L Bottle','600ml 12pk','600ml 6pk'];
+const HORIZON_DAYS = 14;
+const PROJECTION_DAYS = 28;
+
+async function sbGet(path){
+  const r = await fetch(SB_URL + '/rest/v1/' + path, {
+    headers:{apikey:SB_KEY, Authorization:'Bearer '+SB_KEY}
+  });
+  if(!r.ok) throw new Error(path + ' returned ' + r.status);
+  return r.json();
+}
+
+function fmtDate(d){
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  return dd+'/'+mm;
+}
+function isoDate(d){
+  return d.toISOString().slice(0,10);
+}
+function dayOfWeek(d){return d.getDay();} // 0=Sun, 6=Sat
+function isWeekend(d){const w=d.getDay();return w===0||w===6;}
+function fmtNum(n){return n==null||isNaN(n)?'-':Math.round(n).toLocaleString('en-AU');}
+
+function buildDayList(){
+  const days = [];
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  for(let i=0;i<HORIZON_DAYS;i++){
+    const d = new Date(today);
+    d.setDate(today.getDate()+i);
+    days.push(d);
+  }
+  return days;
+}
+
+function buildProjectionDays(){
+  const days = [];
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  for(let i=0;i<PROJECTION_DAYS;i++){
+    const d = new Date(today);
+    d.setDate(today.getDate()+i);
+    days.push(d);
+  }
+  return days;
+}
+
+// Combine forecasts across retailers, split weekly buckets across the 5 working days of that week
+function expandForecastsToDaily(forecasts, sku, days){
+  const daily = {};
+  days.forEach(d => daily[isoDate(d)] = 0);
+
+  forecasts.filter(f => f.sku === sku).forEach(f => {
+    const weekStart = new Date(f.week_date);
+    weekStart.setHours(0,0,0,0);
+    // Spread across Mon-Fri of that week (5 working days)
+    const units = Number(f.units) || 0;
+    const dailyUnits = units / 5;
+    for(let off=0; off<7; off++){
+      const d = new Date(weekStart);
+      d.setDate(weekStart.getDate()+off);
+      // Skip weekends
+      if(d.getDay()===0 || d.getDay()===6) continue;
+      const key = isoDate(d);
+      if(key in daily) daily[key] += dailyUnits;
+    }
+  });
+  return daily;
+}
+
+function expandCommittedOrders(orderLines, sku, days){
+  const daily = {};
+  days.forEach(d => daily[isoDate(d)] = 0);
+  orderLines
+    .filter(l => l.sku === sku && l.ship_date)
+    .forEach(l => {
+      const key = l.ship_date.slice(0,10);
+      if(key in daily) daily[key] += (Number(l.units_ordered) || 0);
+    });
+  return daily;
+}
+
+function projectStock(stockToday, dailyDemand, days, dailyProduction){
+  const out = [];
+  let onHand = stockToday;
+  days.forEach(d => {
+    const key = isoDate(d);
+    const demand = dailyDemand[key] || 0;
+    const prod = (dailyProduction && dailyProduction[key]) || 0;
+    const eod = onHand + prod - demand;
+    out.push({
+      date: d,
+      iso: key,
+      sod: onHand,
+      demand: demand,
+      production: prod,
+      eod: eod
+    });
+    onHand = eod;
+  });
+  return out;
+}
+
+function classifyDay(stockEod, demandFromHere, daysFromNow){
+  if(stockEod < 0) return 'red';
+  if(demandFromHere === 0 && stockEod >= 0) return 'grey';
+  // Days of cover from this point: how many days until stock hits zero
+  // Simplified: if stockEod / avg daily demand < 3 -> red, < 7 -> amber, else green
+  const avgDaily = demandFromHere / Math.max(1, daysFromNow);
+  if(avgDaily <= 0) return 'green';
+  const cover = stockEod / avgDaily;
+  if(cover < 3) return 'red';
+  if(cover < 7) return 'amber';
+  return 'green';
+}
+
+function daysOfCover(stockNow, dailyDemand, days){
+  // Days of cover today = walk days; subtract demand; report how many days until stock <= 0
+  let stock = stockNow;
+  let totalDemand = 0;
+  let daysCount = 0;
+  for(const d of days){
+    const dem = dailyDemand[isoDate(d)] || 0;
+    totalDemand += dem;
+    if(stock <= 0) break;
+    stock -= dem;
+    daysCount++;
+    if(stock <= 0) break;
+  }
+  // If we never ran out in horizon, use ratio extrapolation
+  if(stock > 0 && totalDemand > 0){
+    const avg = totalDemand / days.length;
+    return Math.round(stockNow / avg);
+  }
+  return daysCount;
+}
+
+let DATA = {stock:[], orders:[], forecasts:[], days:[], projDays:[]};
+let CHART = null;
+
+async function load(){
+  try {
+    const [stock, orderLines, coles, ww, metcash] = await Promise.all([
+      sbGet('stock?select=*'),
+      sbGet('open_order_lines?select=*&limit=2000'),
+      sbGet('coles_forecast?select=*&limit=2000'),
+      sbGet('ww_forecast?select=*&limit=5000'),
+      sbGet('metcash_forecast?select=*&limit=5000'),
+    ]);
+
+    DATA.stock = stock;
+    DATA.orders = orderLines;
+    DATA.forecasts = [...coles, ...ww, ...metcash];
+    DATA.days = buildDayList();
+    DATA.projDays = buildProjectionDays();
+
+    document.getElementById('status').style.display = 'none';
+    document.getElementById('lastUpdated').textContent = 'Loaded ' + new Date().toLocaleString('en-AU');
+
+    render();
+  } catch(e){
+    document.getElementById('status').className = 'status error';
+    document.getElementById('status').textContent = 'Failed to load: ' + e.message;
+  }
+}
+
+function getStockFor(sku){
+  const row = DATA.stock.find(s => s.sku === sku);
+  return row ? Number(row.units) : 0;
+}
+
+function render(){
+  // Build per-SKU projections for the 14-day horizon
+  const skuProjections = {};
+  SKUS.forEach(sku => {
+    const dailyDemand = {};
+    const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days);
+    const co = expandCommittedOrders(DATA.orders, sku, DATA.days);
+    DATA.days.forEach(d => {
+      const key = isoDate(d);
+      dailyDemand[key] = (fc[key]||0) + (co[key]||0);
+    });
+    const stockNow = getStockFor(sku);
+    const projection = projectStock(stockNow, dailyDemand, DATA.days, {});
+    const cover = daysOfCover(stockNow, dailyDemand, DATA.days);
+    skuProjections[sku] = {dailyDemand, projection, stockNow, cover};
+  });
+
+  renderTiles(skuProjections);
+  renderCoverGrid(skuProjections);
+  renderHeatmap(skuProjections);
+}
+
+function renderTiles(skuProj){
+  const skusRed = SKUS.filter(s => skuProj[s].cover < 3);
+  const skusAmber = SKUS.filter(s => skuProj[s].cover >= 3 && skuProj[s].cover < 7);
+  const skusGreen = SKUS.filter(s => skuProj[s].cover >= 7);
+  const worstCover = Math.min(...SKUS.map(s => skuProj[s].cover));
+  const worstSku = SKUS.find(s => skuProj[s].cover === worstCover);
+
+  // Demand met % over the horizon
+  let totalDemand = 0;
+  let totalShortfall = 0;
+  let biggestShortSku = null;
+  let biggestShortVal = 0;
+  SKUS.forEach(sku => {
+    const proj = skuProj[sku].projection;
+    proj.forEach(p => {
+      totalDemand += p.demand;
+      if(p.eod < 0){
+        const shortToday = Math.min(-p.eod, p.demand);
+        totalShortfall += shortToday;
+        if(shortToday > biggestShortVal){
+          biggestShortVal = shortToday;
+          biggestShortSku = sku;
+        }
+      }
+    });
+  });
+  const demandMet = totalDemand > 0 ? Math.round(((totalDemand - totalShortfall)/totalDemand)*100) : 100;
+  const demandMetCls = demandMet >= 95 ? 'green' : demandMet >= 80 ? 'amber' : 'red';
+
+  const tiles = [
+    {label:'SKUs at RED (<3 days)', val: skusRed.length, sub: skusRed.length ? skusRed.join(', ') : 'none', cls: skusRed.length ? 'red' : 'green'},
+    {label:'SKUs at AMBER (3-7 days)', val: skusAmber.length, sub: skusAmber.join(', ') || 'none', cls: skusAmber.length ? 'amber' : 'green'},
+    {label:'Worst SKU days cover', val: worstCover.toString(), sub: worstSku, cls: worstCover < 3 ? 'red' : worstCover < 7 ? 'amber' : 'green'},
+    {label:'14-day demand met', val: demandMet+'%', sub: 'across all 5 SKUs', cls: demandMetCls},
+    {label:'Biggest single shortfall', val: biggestShortVal ? fmtNum(biggestShortVal) : '0', sub: biggestShortSku || 'no shortfalls', cls: biggestShortVal ? 'red' : 'green'},
+  ];
+
+  document.getElementById('tiles').innerHTML = tiles.map(t =>
+    `<div class="tile ${t.cls}">
+      <div class="tile-label">${t.label}</div>
+      <div class="tile-value">${t.val}</div>
+      <div class="tile-sub">${t.sub}</div>
+    </div>`
+  ).join('');
+}
+
+function renderCoverGrid(skuProj){
+  const html = SKUS.map(sku => {
+    const cover = skuProj[sku].cover;
+    const stockNow = skuProj[sku].stockNow;
+    const cls = cover < 3 ? 'red' : cover < 7 ? 'amber' : 'green';
+    const widthPct = Math.min(100, Math.max(4, (cover/14)*100));
+    return `<div class="cover-card" onclick="drillInto('${sku}')" style="cursor:pointer">
+      <div class="cover-sku">${sku}</div>
+      <div class="cover-bar"><div class="cover-fill ${cls}" style="width:${widthPct}%"></div></div>
+      <div class="cover-meta">
+        <span>${fmtNum(stockNow)} units on hand</span>
+        <span class="cover-days">${cover} days cover</span>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('coverGrid').innerHTML = html;
+}
+
+function renderHeatmap(skuProj){
+  const todayIso = isoDate(new Date());
+  // Header row
+  let head = '<thead><tr><th class="sku-col">SKU</th>';
+  DATA.days.forEach(d => {
+    const we = isWeekend(d);
+    const cls = (isoDate(d) === todayIso) ? 'today' : (we ? 'weekend' : '');
+    head += `<th class="${cls}">${fmtDate(d)}</th>`;
+  });
+  head += '</tr></thead>';
+
+  // SKU rows
+  let body = '<tbody>';
+  SKUS.forEach(sku => {
+    const proj = skuProj[sku].projection;
+    body += `<tr><td class="sku-name">${sku}</td>`;
+    proj.forEach((p, idx) => {
+      // Compute remaining demand from this day to end of horizon
+      let demandFromHere = 0;
+      for(let i=idx; i<proj.length; i++) demandFromHere += proj[i].demand;
+      const cls = classifyDay(p.eod, demandFromHere, proj.length - idx);
+      const we = isWeekend(p.date);
+      const cellCls = we ? cls + ' weekend' : cls;
+      const tip = `${sku} ${fmtDate(p.date)}\nStart: ${fmtNum(p.sod)}\nDemand: ${fmtNum(p.demand)}\nEnd: ${fmtNum(p.eod)}`;
+      body += `<td class="day ${cellCls}" title="${tip}" onclick="drillInto('${sku}')">${fmtNum(p.eod)}</td>`;
+    });
+    body += '</tr>';
+  });
+  body += '</tbody>';
+
+  document.getElementById('heatTable').innerHTML = head + body;
+}
+
+function drillInto(sku){
+  const dailyDemand = {};
+  const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.projDays);
+  const co = expandCommittedOrders(DATA.orders, sku, DATA.projDays);
+  DATA.projDays.forEach(d => {
+    const key = isoDate(d);
+    dailyDemand[key] = (fc[key]||0) + (co[key]||0);
+  });
+  const stockNow = getStockFor(sku);
+  const projection = projectStock(stockNow, dailyDemand, DATA.projDays, {});
+
+  // Stockout day
+  const stockoutDay = projection.find(p => p.eod < 0);
+
+  document.getElementById('drilldown').classList.add('active');
+  document.getElementById('drillTitle').textContent = sku + ' - 28-day projection';
+
+  // Breakdown tiles
+  const totalDemand14 = projection.slice(0,14).reduce((s,p)=>s+p.demand,0);
+  const totalCommitted14 = DATA.days.reduce((s,d) => {
+    const k = isoDate(d);
+    return s + (co[k]||0);
+  }, 0);
+  const totalForecast14 = totalDemand14 - totalCommitted14;
+  document.getElementById('breakdown').innerHTML = `
+    <div class="breakdown-tile">
+      <div class="breakdown-label">Stock today</div>
+      <div class="breakdown-val">${fmtNum(stockNow)}</div>
+    </div>
+    <div class="breakdown-tile">
+      <div class="breakdown-label">14-day total demand</div>
+      <div class="breakdown-val">${fmtNum(totalDemand14)}</div>
+    </div>
+    <div class="breakdown-tile">
+      <div class="breakdown-label">Committed (open SOs)</div>
+      <div class="breakdown-val">${fmtNum(totalCommitted14)}</div>
+    </div>
+    <div class="breakdown-tile">
+      <div class="breakdown-label">Forecast / unallocated</div>
+      <div class="breakdown-val">${fmtNum(totalForecast14)}</div>
+    </div>
+  `;
+
+  // Chart
+  const labels = projection.map(p => fmtDate(p.date));
+  const stockLine = projection.map(p => p.eod);
+  const cumDemand = [];
+  let cum = stockNow;
+  projection.forEach(p => { cum -= p.demand; cumDemand.push(cum); });
+
+  if(CHART) CHART.destroy();
+  const ctx = document.getElementById('projChart');
+  CHART = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        {label:'Projected end-of-day stock', data: stockLine, borderColor:'#0E7CCE', backgroundColor:'rgba(14,124,206,.15)', fill:true, tension:0.2, pointRadius:3},
+        {label:'Stockout threshold', data: labels.map(()=>0), borderColor:'#C0392B', borderDash:[6,4], pointRadius:0, fill:false},
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{position:'bottom', labels:{font:{family:'Arial',size:11}}},
+        title:{display:true, text: stockoutDay ? ('STOCKOUT projected ' + fmtDate(stockoutDay.date)) : 'No projected stockout in 28 days', color: stockoutDay ? '#C0392B' : '#27AE60', font:{family:'Arial',size:13,weight:'bold'}}
+      },
+      scales:{
+        x:{ticks:{font:{family:'Arial',size:10}}},
+        y:{title:{display:true,text:'Units on hand'}, ticks:{font:{family:'Arial',size:10}, callback:v=>v.toLocaleString('en-AU')}}
+      }
+    }
+  });
+  document.getElementById('drilldown').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+window.drillInto = drillInto;
+load();
+</script>
+</body>
+</html>
