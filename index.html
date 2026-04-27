@@ -533,10 +533,13 @@ async function load(){
 
     DATA.stock = stock;
     DATA.orders = orderLines;
-    DATA.forecasts = [...coles, ...ww, ...metcash];
-    DATA.colesIds = new Set(coles.map(r => r.id));
-    DATA.wwIds = new Set(ww.map(r => r.id));
-    DATA.metcashIds = new Set(metcash.map(r => r.id));
+    // Tag every forecast row with its source so we can filter freshness correctly
+    // (each forecast table has its own auto-increment id, so id collides across sources).
+    DATA.forecasts = [
+      ...coles.map(r => ({...r, _src: 'coles'})),
+      ...ww.map(r => ({...r, _src: 'ww'})),
+      ...metcash.map(r => ({...r, _src: 'metcash'})),
+    ];
     DATA.days = buildDayList();
     DATA.projDays = buildProjectionDays();
 
@@ -811,9 +814,9 @@ function latest(rows, dateField){
 function renderFreshness(){
   const stockLatest = latest(DATA.stock, 'updated_at');
   const ordersLatest = latest(DATA.orders, 'updated_at');
-  const colesLatest = latest(DATA.forecasts.filter(f => DATA.colesIds.has(f.id)), 'updated_at');
-  const wwLatest = latest(DATA.forecasts.filter(f => DATA.wwIds.has(f.id)), 'updated_at');
-  const metcashLatest = latest(DATA.forecasts.filter(f => DATA.metcashIds.has(f.id)), 'updated_at');
+  const colesLatest = latest(DATA.forecasts.filter(f => f._src === 'coles'), 'updated_at');
+  const wwLatest = latest(DATA.forecasts.filter(f => f._src === 'ww'), 'updated_at');
+  const metcashLatest = latest(DATA.forecasts.filter(f => f._src === 'metcash'), 'updated_at');
 
   const cards = [
     {label:'Stock + open SOs', val: ageStr(stockLatest), iso: stockLatest, amber:24, red:48},
@@ -1233,7 +1236,7 @@ function renderActions(skuProjections){
   });
 
   // Stale forecast warning
-  const wwLatest = latest(DATA.forecasts.filter(f => DATA.wwIds.has(f.id)), 'updated_at');
+  const wwLatest = latest(DATA.forecasts.filter(f => f._src === 'ww'), 'updated_at');
   if(wwLatest){
     const days = (Date.now() - new Date(wwLatest).getTime()) / 86400000;
     if(days > 7){
