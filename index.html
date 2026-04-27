@@ -770,13 +770,17 @@ function buildDailyDemand(sku, days){
   const todayIso = isoDate(today);
   const dailyDemand = {}; days.forEach(d => dailyDemand[isoDate(d)] = 0);
 
-  // 1. Overdue SOs lump onto today
+  // 1. Overdue SOs lump onto the next workday from today (NOT today if today is PH/weekend —
+  //    ABH can't ship on a non-workday, so the dispatch shifts forward).
   let overdue = 0;
   DATA.orders.forEach(l => {
     if(l.sku !== sku || !l.ship_date) return;
     if(l.ship_date < todayIso) overdue += Number(l.units_ordered)||0;
   });
-  dailyDemand[todayIso] += overdue;
+  if(overdue > 0){
+    const overdueLumpDay = isoDate(nextWorkday(today));
+    if(overdueLumpDay in dailyDemand) dailyDemand[overdueLumpDay] += overdue;
+  }
 
   // 2. Forecast handling:
   //    WW + Coles forecast rows have order_date = the actual dispatch date. Place units on that
@@ -823,12 +827,15 @@ function buildDailyDemand(sku, days){
     inHorizon.forEach(d => { fcByDay[isoDate(d)] = (fcByDay[isoDate(d)]||0) + perDay; });
   });
 
-  // 3. SOs by ship_date (forward only — overdue already lumped above)
+  // 3. SOs by ship_date (forward only — overdue already lumped above).
+  //    If ship_date falls on PH/weekend, shift to next workday (we can't physically dispatch).
   const soByDay = {};
   DATA.orders.forEach(l => {
     if(l.sku !== sku || !l.ship_date) return;
     if(l.ship_date < todayIso) return;
-    const k = l.ship_date.slice(0,10);
+    const sd = new Date(l.ship_date.slice(0,10));
+    const targetDay = nextWorkday(sd);
+    const k = isoDate(targetDay);
     if(k in dailyDemand){
       soByDay[k] = (soByDay[k]||0) + (Number(l.units_ordered)||0);
     }
