@@ -3,9 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ABH Pureau Planner v2</title>
+<title>Pureau Fulfilment Planner</title>
 <link rel="icon" href="favicon.ico">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root{
     --navy:#1B2A4A; --red:#C0392B; --amber:#E67E22; --green:#27AE60;
@@ -13,232 +12,112 @@
   }
   *{box-sizing:border-box}
   body{font-family:Arial,sans-serif;margin:0;padding:0;background:#FAFAFA;color:var(--dktext);font-size:14px;line-height:1.4}
-  header{background:var(--navy);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+  header{background:var(--navy);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
   header img{height:32px}
   header h1{font-size:18px;margin:0;font-weight:bold}
-  header .ver{font-size:10px;opacity:.6;letter-spacing:.5px;margin-left:8px}
-  header .updated{margin-left:auto;font-size:11px;opacity:.7}
+  header .updated{margin-left:auto;font-size:11px;opacity:.85}
   main{padding:18px 20px;max-width:1400px;margin:0 auto}
-  h2{font-size:14px;margin:24px 0 10px;color:var(--navy);font-weight:bold;text-transform:uppercase;letter-spacing:.4px}
 
-  /* KPI tiles */
-  .tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px}
-  .tile{background:#fff;border-left:4px solid var(--navy);padding:12px 14px;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.06);cursor:default}
-  .tile.red{border-left-color:var(--red)}
-  .tile.amber{border-left-color:var(--amber)}
-  .tile.green{border-left-color:var(--green)}
-  .tile-label{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:#777;margin-bottom:4px}
-  .tile-value{font-size:24px;font-weight:bold;color:var(--navy);line-height:1.1}
-  .tile.red .tile-value{color:var(--red)}
-  .tile.amber .tile-value{color:var(--amber)}
-  .tile.green .tile-value{color:var(--green)}
-  .tile-sub{font-size:11px;color:#666;margin-top:3px}
+  .banner{padding:18px 22px;border-radius:6px;margin-bottom:18px;font-size:16px;font-weight:bold;color:#fff;display:flex;align-items:center;gap:14px}
+  .banner.red{background:var(--red)}
+  .banner.amber{background:var(--amber)}
+  .banner.green{background:var(--green)}
+  .banner-count{font-size:32px;font-weight:bold;background:rgba(255,255,255,0.2);padding:4px 14px;border-radius:4px;min-width:60px;text-align:center}
 
-  /* Days-of-cover bars */
-  .cover-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px}
-  .cover-card{background:#fff;padding:12px 14px;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
-  .cover-sku{font-size:12px;font-weight:bold;color:var(--navy);margin-bottom:6px}
-  .cover-bar{height:18px;background:var(--ltgrey);border-radius:3px;overflow:hidden;position:relative;border:1px solid #E5E5E5}
-  .cover-fill{height:100%;transition:width .3s ease}
-  .cover-fill.red{background:var(--red)}
-  .cover-fill.amber{background:var(--amber)}
-  .cover-fill.green{background:var(--green)}
-  .cover-meta{display:flex;justify-content:space-between;font-size:11px;color:#666;margin-top:4px}
-  .cover-days{font-weight:bold;color:var(--dktext)}
+  h2{font-size:14px;margin:24px 0 8px;color:var(--navy);font-weight:bold;text-transform:uppercase;letter-spacing:.5px}
+  h2 .count{background:var(--ltgrey);color:var(--dktext);font-size:11px;padding:2px 8px;border-radius:3px;margin-left:8px;font-weight:normal}
 
-  /* Heatmap */
-  .heatmap{background:#fff;border-radius:4px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.06);overflow-x:auto}
-  table.heat{border-collapse:collapse;width:100%;font-size:11px}
-  table.heat th,table.heat td{border:1px solid #E5E5E5;padding:6px 4px;text-align:center;min-width:42px}
-  table.heat th{background:var(--navy);color:#fff;font-weight:bold;font-size:10px}
-  table.heat th.sku-col{text-align:left;padding-left:10px;width:120px;min-width:120px}
-  table.heat td.sku-name{text-align:left;padding-left:10px;font-weight:bold;color:var(--navy);background:var(--ltgrey)}
-  table.heat td.day{cursor:pointer;font-weight:bold;color:#fff}
-  table.heat td.day.red{background:var(--red)}
-  table.heat td.day.amber{background:var(--amber)}
-  table.heat td.day.green{background:var(--green)}
-  table.heat td.day.grey{background:#E5E5E5;color:#888}
-  table.heat td.day:hover{outline:2px solid var(--blue)}
-  table.heat th.weekend,table.heat td.weekend{background:#F8F8F8;color:#aaa}
-  table.heat th.today{background:var(--blue)}
+  .panel{background:#fff;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.06);overflow-x:auto;padding:0}
+  .panel-empty{padding:18px;color:#888;font-size:13px;text-align:center}
+  .toolbar{padding:10px 14px;border-bottom:1px solid var(--ltgrey);display:flex;justify-content:flex-end;gap:8px}
+  .toolbar button{padding:6px 12px;font-family:Arial;font-size:12px;background:var(--blue);color:#fff;border:none;border-radius:3px;cursor:pointer}
+  .toolbar button:hover{opacity:.9}
 
-  /* SKU drilldown */
-  .drilldown{background:#fff;border-radius:4px;padding:18px;margin-top:18px;box-shadow:0 1px 2px rgba(0,0,0,.06);display:none}
-  .drilldown.active{display:block}
-  .drilldown h3{margin:0 0 10px;color:var(--navy);font-size:16px}
-  .chart-wrap{position:relative;height:340px;margin-bottom:14px}
-  .breakdown{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;font-size:12px}
-  .breakdown-tile{background:var(--ltgrey);padding:8px 10px;border-radius:3px}
-  .breakdown-label{font-size:10px;text-transform:uppercase;color:#777;letter-spacing:.5px}
-  .breakdown-val{font-size:16px;font-weight:bold;color:var(--navy)}
+  table{border-collapse:collapse;width:100%;font-size:12px}
+  th{background:var(--navy);color:#fff;font-weight:bold;font-size:11px;text-align:left;padding:8px 10px;text-transform:uppercase;letter-spacing:.4px;position:sticky;top:0}
+  td{padding:8px 10px;border-bottom:1px solid #EEE;vertical-align:top}
+  tr:hover td{background:#FFFCF0}
+  td.right{text-align:right}
+  td.sku{font-weight:bold;color:var(--navy);white-space:nowrap}
+  td.so{font-family:Menlo,monospace;font-size:11px;color:var(--navy);font-weight:bold;white-space:nowrap}
+  td.late{font-weight:bold;color:var(--red);text-align:right;white-space:nowrap}
+  td.short{font-weight:bold;color:var(--red);text-align:right;white-space:nowrap}
+  td.surplus{font-weight:bold;color:var(--green);text-align:right;white-space:nowrap}
+  td.reason{color:#666;font-size:11px}
+  .badge-red{background:var(--red);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
+  .badge-amber{background:var(--amber);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
+  .badge-green{background:var(--green);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
 
-  /* Status & errors */
-  .status{padding:14px 18px;background:#FFF3CD;border:1px solid #FFE69C;border-radius:4px;color:#664D03;margin-bottom:14px;font-size:13px}
-  .status.error{background:#F8D7DA;border-color:#F5C2C7;color:#842029}
-  .legend{display:flex;gap:14px;font-size:11px;margin-top:8px;color:#666}
-  .legend span{display:inline-flex;align-items:center;gap:5px}
-  .legend i{width:12px;height:12px;border-radius:2px;display:inline-block}
+  /* Forecast-vs-supply summary */
+  .summary-row td{font-weight:bold}
+  .summary-row.red td{color:var(--red)}
+  .summary-row.green td{color:var(--green)}
+
+  /* Freshness panel */
+  .fresh-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;padding:14px}
+  .fresh-cell{padding:10px 12px;border-radius:3px;background:var(--ltgrey);border-left:4px solid var(--green);font-size:12px}
+  .fresh-cell.amber{border-left-color:var(--amber)}
+  .fresh-cell.red{border-left-color:var(--red)}
+  .fresh-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#777;margin-bottom:3px}
+  .fresh-value{font-weight:bold;color:var(--navy);font-size:13px}
+  .fresh-when{font-size:10px;color:#888;margin-top:2px}
 
   footer{padding:18px 20px;font-size:11px;color:#999;text-align:center;border-top:1px solid #E5E5E5;margin-top:30px}
 
-  /* Section cards (unfulfillable, capacity, whatif, forecast, actions) */
-  .section-card{background:#fff;border-radius:4px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.06);overflow-x:auto}
-  .section-empty{color:#888;font-size:12px;padding:14px 0;text-align:center}
-
-  /* Unfulfillable list rows */
-  .unful-row{display:grid;grid-template-columns:90px 110px 1fr 110px 100px 100px;gap:8px;padding:8px 10px;border-left:4px solid var(--red);background:#FFF5F5;border-radius:3px;margin-bottom:6px;font-size:12px;align-items:center}
-  .unful-sku{font-weight:bold;color:var(--navy)}
-  .unful-so{font-family:Menlo,monospace;font-size:11px;color:var(--navy);font-weight:bold}
-  .unful-cust{color:#444}
-  .unful-date{color:#666}
-  .unful-qty{text-align:right;font-weight:bold;color:var(--red)}
-  .unful-short{text-align:right;font-weight:bold;color:var(--red)}
-  .unful-headers{display:grid;grid-template-columns:90px 110px 1fr 110px 100px 100px;gap:8px;padding:6px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#777;font-weight:bold}
-
-  /* Capacity calendar */
-  table.capacity{border-collapse:collapse;width:100%;font-size:11px}
-  table.capacity th,table.capacity td{border:1px solid #E5E5E5;padding:6px 5px;text-align:center;min-width:42px}
-  table.capacity th{background:var(--navy);color:#fff;font-weight:bold;font-size:10px}
-  table.capacity th.line-col{text-align:left;padding-left:10px;width:140px;min-width:140px}
-  table.capacity td.line-name{text-align:left;padding-left:10px;font-weight:bold;color:var(--navy);background:var(--ltgrey)}
-  table.capacity td.cap{font-weight:bold}
-  table.capacity td.cap.full{background:var(--red);color:#fff}
-  table.capacity td.cap.tight{background:var(--amber);color:#fff}
-  table.capacity td.cap.ok{background:var(--green);color:#fff}
-  table.capacity td.cap.idle{background:#E5E5E5;color:#888}
-  table.capacity td.cap.unknown{background:#F8F8F8;color:#bbb}
-  table.capacity th.weekend,table.capacity td.weekend{background:#F8F8F8;color:#aaa}
-
-  /* What-if simulator */
-  .whatif-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
-  .whatif-controls select{padding:4px 8px;font-family:Arial;font-size:13px;border:1px solid var(--mdgrey);border-radius:3px;background:#fff}
-  .whatif-controls button{padding:6px 14px;font-family:Arial;font-size:13px;background:var(--blue);color:#fff;border:none;border-radius:3px;cursor:pointer}
-  .whatif-controls button:hover{opacity:.9}
-  #wifClear{background:var(--mdgrey)!important;color:#333!important}
-  .whatif-result{margin-top:14px}
-  .whatif-comparison{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:10px}
-  .wif-card{padding:10px;border-radius:3px;background:var(--ltgrey);font-size:12px}
-  .wif-card.worse{border-left:4px solid var(--red);background:#FFF5F5}
-  .wif-card.same{border-left:4px solid var(--green)}
-  .wif-card-sku{font-weight:bold;color:var(--navy);font-size:11px;margin-bottom:4px}
-  .wif-card-vals{font-size:11px;color:#666}
-
-  /* Forecast accuracy */
-  table.forecast{border-collapse:collapse;width:100%;font-size:11px}
-  table.forecast th,table.forecast td{border:1px solid #E5E5E5;padding:6px 8px}
-  table.forecast th{background:var(--navy);color:#fff;font-weight:bold;font-size:10px;text-align:left}
-  table.forecast td.right{text-align:right;font-weight:bold}
-  table.forecast .err-low{color:var(--green)}
-  table.forecast .err-mid{color:var(--amber)}
-  table.forecast .err-high{color:var(--red)}
-
-  /* Action queue */
-  .action-item{padding:10px 14px;background:var(--ltgrey);border-left:4px solid var(--blue);border-radius:3px;margin-bottom:8px;font-size:12px}
-  .action-item.urgent{border-left-color:var(--red);background:#FFF5F5}
-  .action-item.warn{border-left-color:var(--amber);background:#FFF9F0}
-  .action-item-title{font-weight:bold;color:var(--navy);margin-bottom:3px}
-  .action-item-detail{color:#555;font-size:11px}
-
-  /* Freshness panel */
-  .fresh-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
-  .fresh-card{background:#fff;padding:10px 12px;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.06);border-left:4px solid var(--green)}
-  .fresh-card.stale{border-left-color:var(--amber)}
-  .fresh-card.dead{border-left-color:var(--red)}
-  .fresh-label{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:#777;margin-bottom:3px}
-  .fresh-value{font-size:13px;font-weight:bold;color:var(--navy)}
-  .fresh-age{font-size:10px;color:#888}
-
-  /* Export button */
-  .export-bar{display:flex;justify-content:flex-end;margin-bottom:8px;gap:8px}
-  .export-btn{padding:5px 12px;font-family:Arial;font-size:11px;background:var(--blue);color:#fff;border:none;border-radius:3px;cursor:pointer}
-  .export-btn:hover{opacity:.9}
+  /* Mobile */
+  @media (max-width: 768px){
+    main{padding:12px}
+    table{font-size:11px}
+    th,td{padding:6px 8px}
+    .banner{font-size:14px;padding:14px 16px}
+    .banner-count{font-size:24px}
+  }
 </style>
 </head>
 <body>
 
 <header>
   <img src="abh-logo.png" alt="ABH">
-  <h1>ABH Pureau Planner <span class="ver">v2 prototype</span></h1>
+  <h1>Pureau Fulfilment Planner</h1>
   <div class="updated" id="lastUpdated">Loading…</div>
 </header>
 
 <main>
-  <div id="status" class="status">Loading data from Supabase…</div>
+  <div id="banner"></div>
+
+  <h2>Overdue dispatches <span class="count" id="overdueCount"></span></h2>
+  <div class="panel" id="overduePanel"></div>
+
+  <h2>At-risk orders, today through today + 14 days <span class="count" id="atriskCount"></span></h2>
+  <div class="panel" id="atriskPanel"></div>
+
+  <h2>Next week, forecast vs supply per SKU</h2>
+  <div class="panel" id="nextweekPanel"></div>
+
+  <h2>Reconciliation to NetSuite</h2>
+  <div class="panel" id="reconPanel"></div>
 
   <h2>Data freshness</h2>
-  <div class="fresh-grid" id="freshness"></div>
-
-  <h2>At a glance</h2>
-  <div class="tiles" id="tiles"></div>
-
-  <h2>Days of cover</h2>
-  <div class="cover-grid" id="coverGrid"></div>
-
-  <h2>14-day delivery feasibility</h2>
-  <div class="export-bar">
-    <button class="export-btn" id="exportCsv">Export heatmap CSV</button>
-  </div>
-  <div class="heatmap">
-    <table class="heat" id="heatTable"></table>
-    <div class="legend">
-      <span><i style="background:var(--green)"></i>Can ship in full + buffer</span>
-      <span><i style="background:var(--amber)"></i>Can ship but tight (no buffer)</span>
-      <span><i style="background:var(--red)"></i>Shortfall, cannot ship in full</span>
-      <span><i style="background:#E5E5E5"></i>No demand</span>
-      <span><i style="background:var(--blue)"></i>Today</span>
-    </div>
-    <div style="font-size:11px;color:#888;margin-top:6px">Cell shows units short for the day if any, otherwise start-of-day stock. Hover for the full breakdown (SOD, demand, production, EOD).</div>
-  </div>
-
-  <div id="drilldown" class="drilldown">
-    <h3 id="drillTitle">SKU detail</h3>
-    <div class="chart-wrap"><canvas id="projChart"></canvas></div>
-    <div class="breakdown" id="breakdown"></div>
-  </div>
-
-  <h2>Overdue dispatches (must ship today)</h2>
-  <div id="overdueDispatches" class="section-card"></div>
-
-  <h2>Upcoming unfulfillable orders (production won't catch up)</h2>
-  <div id="unfulfillable" class="section-card"></div>
-
-  <h2>Production capacity (next 14 days)</h2>
-  <div id="capacity" class="section-card"></div>
-
-  <h2>What-if simulator</h2>
-  <div id="whatif" class="section-card">
-    <div class="whatif-controls">
-      <label>If <select id="wifLine"></select> is down for <select id="wifDays"></select> day(s) starting <select id="wifStart"></select> →</label>
-      <button id="wifRun">Simulate</button>
-      <button id="wifClear">Clear</button>
-    </div>
-    <div id="wifResult" class="whatif-result"></div>
-  </div>
-
-  <h2>Forecast accuracy</h2>
-  <div id="forecast" class="section-card"></div>
-
-  <h2>Suggested actions</h2>
-  <div id="actions" class="section-card"></div>
+  <div class="panel"><div class="fresh-grid" id="freshGrid"></div></div>
 </main>
 
 <footer>
-  ABH Pureau Planner v2 prototype. Data refreshes from live Supabase on every load. Built 27/04/2026.
+  Pureau Fulfilment Planner. Data refreshes from NetSuite hourly Mon-Fri 06:00-20:00 + 3x Saturday via <code>stock_order_sync.py</code>. This page auto-refreshes every 5 minutes.
 </footer>
 
 <script>
 const SB_URL = 'https://yxaebxkkclbjezffmerw.supabase.co';
 const SB_KEY = 'sb_publishable_yLmaFw0myJv-rHuCC2LsHw_WW7d8lJn';
 
+// NetSuite deep-link constants — Rob's NS account 8688068
+const NS_BASE = 'https://8688068.app.netsuite.com';
+const NS_SAVED_SEARCH_OPEN_SOS = NS_BASE + '/app/common/search/searchresults.nl?searchid=6137';
+const NS_REPORT_STOCK = NS_BASE + '/app/reporting/reportrunner.nl?reportid=752';
+const NS_TRAN_SEARCH = (tranid) => NS_BASE + '/app/common/search/global.nl?text=' + encodeURIComponent(tranid) + '&type=Transaction';
+
+// ── AUTHORITATIVE CONSTANTS (source: existing planner.abhgroup.com.au) ──
 const SKUS = ['10L Cask','5L Cask','2L Bottle','600ml 12pk','600ml 6pk'];
-const HORIZON_DAYS = 14;
-const PROJECTION_DAYS = 28;
-
-// Authoritative configs — copied from the existing planner (planner.abhgroup.com.au).
-// Single source of truth so v2 daily views stay consistent with the weekly planner.
 const UPP = {'10L Cask':96,'5L Cask':60,'2L Bottle':64,'600ml 12pk':126,'600ml 6pk':252};
-
-// Planned pallets per shift by line config
 const PLAN_TARGETS = {
   'Line A':         {'10L Cask': 40},
   'Line B':         {'5L Cask': 35, '10L Cask': 40},
@@ -247,8 +126,6 @@ const PLAN_TARGETS = {
   'HMPS - Single':  {'10L Cask': 40},
   'EP new line':    {'600ml 12pk': 34, '600ml 6pk': 32},
 };
-
-// Which lines make each SKU under normal operation (used to compute daily capacity per SKU)
 const SKU_LINES = {
   '10L Cask':   ['HMPS - Dual', 'Line A', 'Line B'],
   '5L Cask':    ['Line B'],
@@ -256,1027 +133,423 @@ const SKU_LINES = {
   '600ml 12pk': ['EP new line'],
   '600ml 6pk':  ['EP new line'],
 };
-
-// Line B outage during shed move — Line A only between these dates
+const SATURDAY_LINES = new Set(['HMPS - Dual','HMPS - Single','Line A','Line B']);
 const LINE_B_OUTAGE_START = '2026-04-13';
 const LINE_B_OUTAGE_END   = '2026-06-13';
+const SHIFTS_WEEKDAY = 2;
+const SHIFTS_SATURDAY = 1;
 
-// Average shifts per weekday at each line (HMPS = 2, others = 2 day+arvo). Saturday = 1 shift.
-const SHIFTS_PER_WEEKDAY = 2;
-const SHIFTS_PER_SATURDAY = 1;
-
-// EP New Line changeover — minutes lost between SKU changes
-const EP_CHANGEOVER_MINS = 45;
-
-// Retailer dispatch offsets (days before need_arrival)
-const WW_DISPATCH_OFFSET = 2;
-const COLES_DISPATCH_OFFSET = 1;
-
-// Public holidays — loaded from Supabase public_holidays table at startup (same source as existing planner)
 let PUBLIC_HOLIDAYS = new Set();
+const HORIZON_DAYS = 14;
 
-// Actual sales by SKU by week W14-W17 (from NS Report 733). Used for forecast accuracy v1.
-// Tier 2 work: live refresh from a sales_actuals table populated weekly.
-const HISTORICAL_SALES_W14_W17 = {
-  '10L Cask':   {W14:74084, W15:74676, W16:74146, W17:93718},
-  '5L Cask':    {W14:12420, W15:6360,  W16:6480,  W17:5760},
-  '2L Bottle':  {W14:10112, W15:7616,  W16:5696,  W17:11136},
-  '600ml 12pk': {W14:13482, W15:14868, W16:10332, W17:18900},
-  '600ml 6pk':  {W14:14112, W15:10080, W16:16632, W17:27216},
-};
-
-// Lines available on Saturday per the existing planner (HMPS + Line A + Line B).
-// Other lines (SM Bottle, EP new line) do NOT run Saturday by default.
-const SATURDAY_LINES = new Set(['HMPS - Dual','HMPS - Single','Line A','Line B']);
-
-// Compute daily production capacity (units) for a SKU on a given Date.
-// Uses PLAN_TARGETS × UPP × shifts/day, honouring weekends, public holidays, Line B outage.
-// Saturday-aware: HMPS + Line A + Line B run Saturday at SHIFTS_PER_SATURDAY (1 shift).
-function dailyCapacityFor(sku, dateObj){
-  const iso = isoDate(dateObj);
-  const dow = dateObj.getDay();
-  if(dow === 0) return 0; // Sunday — no production
-  if(PUBLIC_HOLIDAYS.has(iso)) return 0;
-  const upp = UPP[sku] || 1;
-  const isSaturday = (dow === 6);
-  const shifts = isSaturday ? SHIFTS_PER_SATURDAY : SHIFTS_PER_WEEKDAY;
-  let palShift = 0;
-  const inOutage = iso >= LINE_B_OUTAGE_START && iso <= LINE_B_OUTAGE_END;
-  (SKU_LINES[sku] || []).forEach(line => {
-    // Line B is unavailable during the outage window
-    if(line === 'Line B' && inOutage) return;
-    // On Saturday only HMPS + Line A + Line B run; SM Bottle and EP New Line are weekdays-only
-    if(isSaturday && !SATURDAY_LINES.has(line)) return;
-    const tgt = (PLAN_TARGETS[line] || {})[sku];
-    if(tgt) palShift += tgt;
-  });
-  return Math.round(palShift * shifts * upp);
-}
-
-// Theoretical max per line for the capacity calendar / what-if (uses HMPS Dual as 10L max)
-const LINE_THEORETICAL_MAX = {
-  'HMPS (10L Cask)':       {sku:'10L Cask',    units_per_day: PLAN_TARGETS['HMPS - Dual']['10L Cask'] * SHIFTS_PER_WEEKDAY * UPP['10L Cask']},
-  'Cask Line A (10L)':     {sku:'10L Cask',    units_per_day: PLAN_TARGETS['Line A']['10L Cask']    * SHIFTS_PER_WEEKDAY * UPP['10L Cask']},
-  'Cask Line B (5L/10L)':  {sku:'5L Cask',     units_per_day: PLAN_TARGETS['Line B']['5L Cask']     * SHIFTS_PER_WEEKDAY * UPP['5L Cask']},
-  'SM Bottle (2L)':        {sku:'2L Bottle',   units_per_day: PLAN_TARGETS['SM Bottle line']['2L Bottle'] * SHIFTS_PER_WEEKDAY * UPP['2L Bottle']},
-  'EP New Line 12pk':      {sku:'600ml 12pk',  units_per_day: PLAN_TARGETS['EP new line']['600ml 12pk']   * SHIFTS_PER_WEEKDAY * UPP['600ml 12pk']},
-  'EP New Line 6pk':       {sku:'600ml 6pk',   units_per_day: PLAN_TARGETS['EP new line']['600ml 6pk']    * SHIFTS_PER_WEEKDAY * UPP['600ml 6pk']},
-};
-
-async function sbGet(path){
-  const r = await fetch(SB_URL + '/rest/v1/' + path, {
-    headers:{apikey:SB_KEY, Authorization:'Bearer '+SB_KEY}
-  });
-  if(!r.ok) throw new Error(path + ' returned ' + r.status);
-  return r.json();
-}
-
+// ── HELPERS ──
+const fmt = n => n==null||isNaN(n) ? '0' : Math.round(Number(n)).toLocaleString('en-AU');
+const fmtSign = n => { const v = Math.round(Number(n)||0); return v >= 0 ? `+${v.toLocaleString('en-AU')}` : v.toLocaleString('en-AU'); };
+function isoDate(d){ return d.toISOString().slice(0,10); }
 function fmtDate(d){
   const dd = String(d.getDate()).padStart(2,'0');
   const mm = String(d.getMonth()+1).padStart(2,'0');
   return dd+'/'+mm;
 }
-function isoDate(d){
-  return d.toISOString().slice(0,10);
+function fmtDateLong(d){
+  const wk = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+  return `${wk} ${fmtDate(d)}`;
 }
-function dayOfWeek(d){return d.getDay();} // 0=Sun, 6=Sat
-function isWeekend(d){const w=d.getDay();return w===0||w===6;}
-function fmtNum(n){return n==null||isNaN(n)?'-':Math.round(n).toLocaleString('en-AU');}
-
-function buildDayList(){
-  const days = [];
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  for(let i=0;i<HORIZON_DAYS;i++){
-    const d = new Date(today);
-    d.setDate(today.getDate()+i);
-    days.push(d);
-  }
-  return days;
+function ageStr(iso){
+  if(!iso) return 'never';
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if(mins < 60) return mins + 'm ago';
+  if(mins < 60*24) return Math.round(mins/60) + 'h ago';
+  return Math.round(mins/(60*24)) + 'd ago';
 }
 
-function buildProjectionDays(){
-  const days = [];
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  for(let i=0;i<PROJECTION_DAYS;i++){
-    const d = new Date(today);
-    d.setDate(today.getDate()+i);
-    days.push(d);
-  }
-  return days;
+async function sbGet(path){
+  const r = await fetch(SB_URL + '/rest/v1/' + path, { headers:{apikey:SB_KEY, Authorization:'Bearer '+SB_KEY} });
+  if(!r.ok) throw new Error(path + ' → HTTP ' + r.status);
+  return r.json();
 }
 
-// Combine forecasts across retailers, but NET against confirmed SOs already placed for the same week.
-// Logic: for each week, demand = MAX(forecast, sum_of_SOs_in_that_week). Avoids double-counting where
-// a retailer has converted forecast to confirmed SO. Spread the resulting weekly demand across working
-// days only (skip weekends and public holidays).
-function expandForecastsToDaily(forecasts, sku, days, orderLines){
-  const daily = {};
-  days.forEach(d => daily[isoDate(d)] = 0);
-
-  // Group forecasts by Mon-Sun week start for the SKU
-  const fcByWeek = {};
-  forecasts.filter(f => f.sku === sku).forEach(f => {
-    const weekStart = new Date(f.week_date);
-    weekStart.setHours(0,0,0,0);
-    // Normalise to Monday (NS week_date is typically Monday already)
-    const weekKey = isoDate(weekStart);
-    fcByWeek[weekKey] = (fcByWeek[weekKey] || 0) + (Number(f.units) || 0);
+function dailyCapacity(sku, dateObj){
+  const iso = isoDate(dateObj);
+  const dow = dateObj.getDay();
+  if(dow === 0) return 0;
+  if(PUBLIC_HOLIDAYS.has(iso)) return 0;
+  const isSaturday = (dow === 6);
+  const inOutage = iso >= LINE_B_OUTAGE_START && iso <= LINE_B_OUTAGE_END;
+  let palShift = 0;
+  (SKU_LINES[sku] || []).forEach(line => {
+    if(line === 'Line B' && inOutage) return;
+    if(isSaturday && !SATURDAY_LINES.has(line)) return;
+    const tgt = (PLAN_TARGETS[line] || {})[sku];
+    if(tgt) palShift += tgt;
   });
-
-  // Group open SOs by week (using ship_date)
-  const soByWeek = {};
-  if(orderLines){
-    orderLines.filter(l => l.sku === sku && l.ship_date).forEach(l => {
-      const sd = new Date(l.ship_date);
-      sd.setHours(0,0,0,0);
-      // Normalise ship_date to Monday of that week
-      const dow = sd.getDay();
-      const offsetToMon = dow === 0 ? -6 : (1 - dow);
-      const monday = new Date(sd); monday.setDate(sd.getDate() + offsetToMon);
-      const weekKey = isoDate(monday);
-      soByWeek[weekKey] = (soByWeek[weekKey] || 0) + (Number(l.units_ordered) || 0);
-    });
-  }
-
-  // For each week with forecast or SOs, take MAX and spread over working days
-  const allWeekKeys = new Set([...Object.keys(fcByWeek), ...Object.keys(soByWeek)]);
-  allWeekKeys.forEach(weekKey => {
-    const fc = fcByWeek[weekKey] || 0;
-    const so = soByWeek[weekKey] || 0;
-    const weekDemand = Math.max(fc, so);
-    if(weekDemand === 0) return;
-
-    // Determine working days in this week (Mon-Fri minus public holidays) that fall within our horizon
-    const weekStart = new Date(weekKey);
-    weekStart.setHours(0,0,0,0);
-    const workingDays = [];
-    for(let off = 0; off < 7; off++){
-      const d = new Date(weekStart); d.setDate(weekStart.getDate()+off);
-      const dow = d.getDay();
-      if(dow === 0 || dow === 6) continue;
-      if(PUBLIC_HOLIDAYS.has(isoDate(d))) continue;
-      workingDays.push(d);
-    }
-    if(workingDays.length === 0) return;
-
-    // Distribute demand across in-horizon working days; days outside horizon are dropped
-    const inHorizonDays = workingDays.filter(d => isoDate(d) in daily);
-    if(inHorizonDays.length === 0) return;
-    const perDay = weekDemand / workingDays.length;
-    inHorizonDays.forEach(d => { daily[isoDate(d)] += perDay; });
-  });
-
-  return daily;
+  return Math.round(palShift * (isSaturday ? SHIFTS_SATURDAY : SHIFTS_WEEKDAY) * (UPP[sku]||1));
 }
 
-// Overdue SOs only — past-dated lines lump onto today. Forward SOs are netted into forecast already.
-function overdueOrdersFor(sku, days, orderLines){
-  const daily = {};
-  days.forEach(d => daily[isoDate(d)] = 0);
-  const todayKey = isoDate(new Date());
-  orderLines.filter(l => l.sku === sku && l.ship_date).forEach(l => {
-    const key = l.ship_date.slice(0,10);
-    if(key < todayKey){
-      daily[todayKey] = (daily[todayKey] || 0) + (Number(l.units_ordered) || 0);
-    }
-  });
-  return daily;
+function reasonForShortfall(sku, shipDateIso){
+  if(sku === '5L Cask' && shipDateIso >= LINE_B_OUTAGE_START && shipDateIso <= LINE_B_OUTAGE_END){
+    return 'Line B outage 13/04–13/06: zero 5L production from current line config';
+  }
+  return 'Stock + planned production insufficient by ship date';
 }
 
-function projectStock(stockToday, dailyDemand, days, dailyProduction){
-  const out = [];
-  let onHand = stockToday;
-  days.forEach(d => {
-    const key = isoDate(d);
-    const demand = dailyDemand[key] || 0;
-    const prod = (dailyProduction && dailyProduction[key]) || 0;
-    const eod = onHand + prod - demand;
-    out.push({
-      date: d,
-      iso: key,
-      sod: onHand,
-      demand: demand,
-      production: prod,
-      eod: eod
-    });
-    onHand = eod;
-  });
-  return out;
-}
-
-function classifyDeliveryDay(p){
-  // p has: sod, demand, production, eod
-  // Can we ship today's demand from start-of-day stock + today's production?
-  if(p.demand === 0) return {cls: 'grey', shortfall: 0};
-  const supply = p.sod + p.production;
-  if(supply < p.demand){
-    return {cls: 'red', shortfall: p.demand - supply};
-  }
-  // Buffer: supply must exceed demand by at least 20% to be GREEN, else AMBER (tight)
-  if(supply < p.demand * 1.2){
-    return {cls: 'amber', shortfall: 0};
-  }
-  return {cls: 'green', shortfall: 0};
-}
-
-function daysOfCoverWithProduction(stockNow, dailyDemand, dailyProd, days){
-  // Walk forward, including production additions on weekdays. Days until stock <= 0.
-  let stock = stockNow;
-  let daysCount = 0;
-  for(const d of days){
-    if(stock <= 0) break;
-    const key = isoDate(d);
-    const dem = dailyDemand[key] || 0;
-    const prod = dailyProd[key] || 0;
-    stock = stock + prod - dem;
-    daysCount++;
-    if(stock <= 0) break;
-  }
-  if(stock > 0){
-    // Survives the horizon — extrapolate using net daily flow
-    const totalDemand = days.reduce((s,d) => s + (dailyDemand[isoDate(d)]||0), 0);
-    const totalProd = days.reduce((s,d) => s + (dailyProd[isoDate(d)]||0), 0);
-    const netDaily = (totalDemand - totalProd) / days.length;
-    if(netDaily <= 0) return days.length + 14; // production keeps up; show "comfortable"
-    return Math.round(stockNow / netDaily);
-  }
-  return daysCount;
-}
-
-function daysOfCover(stockNow, dailyDemand, days){
-  // Days of cover today = walk days; subtract demand; report how many days until stock <= 0
-  let stock = stockNow;
-  let totalDemand = 0;
-  let daysCount = 0;
-  for(const d of days){
-    const dem = dailyDemand[isoDate(d)] || 0;
-    totalDemand += dem;
-    if(stock <= 0) break;
-    stock -= dem;
-    daysCount++;
-    if(stock <= 0) break;
-  }
-  // If we never ran out in horizon, use ratio extrapolation
-  if(stock > 0 && totalDemand > 0){
-    const avg = totalDemand / days.length;
-    return Math.round(stockNow / avg);
-  }
-  return daysCount;
-}
-
-let DATA = {stock:[], orders:[], forecasts:[], days:[], projDays:[]};
-let CHART = null;
+// ── DATA LOAD ──
+let DATA = {};
 
 async function load(){
   try {
-    const [stock, orderLines, coles, ww, metcash, holidays] = await Promise.all([
+    const [stock, orders, coles, ww, metcash, holidays] = await Promise.all([
       sbGet('stock?select=*'),
       sbGet('open_order_lines?select=*&limit=2000'),
       sbGet('coles_forecast?select=*&limit=2000'),
       sbGet('ww_forecast?select=*&limit=5000'),
       sbGet('metcash_forecast?select=*&limit=5000'),
-      sbGet('public_holidays?select=date').catch(() => []), // graceful if table absent
+      sbGet('public_holidays?select=date').catch(() => []),
     ]);
-
     DATA.stock = stock;
-    DATA.orders = orderLines;
-    // Tag every forecast row with its source so we can filter freshness correctly
-    // (each forecast table has its own auto-increment id, so id collides across sources).
-    DATA.forecasts = [
-      ...coles.map(r => ({...r, _src: 'coles'})),
-      ...ww.map(r => ({...r, _src: 'ww'})),
-      ...metcash.map(r => ({...r, _src: 'metcash'})),
-    ];
-    DATA.days = buildDayList();
-    DATA.projDays = buildProjectionDays();
-
-    PUBLIC_HOLIDAYS = new Set((holidays || []).map(h => h.date));
-
-    document.getElementById('status').style.display = 'none';
-    document.getElementById('lastUpdated').textContent = 'Loaded ' + new Date().toLocaleString('en-AU');
-
+    DATA.orders = orders;
+    DATA.forecasts = {coles, ww, metcash};
+    PUBLIC_HOLIDAYS = new Set((holidays||[]).map(h => h.date));
+    document.getElementById('lastUpdated').textContent = 'Refreshed ' + new Date().toLocaleString('en-AU');
     render();
   } catch(e){
-    document.getElementById('status').className = 'status error';
-    document.getElementById('status').textContent = 'Failed to load: ' + e.message;
+    document.getElementById('banner').className = 'banner red';
+    document.getElementById('banner').innerHTML = '<div class="banner-count">!</div> Failed to load data: ' + e.message;
   }
 }
-
-// Auto-refresh every 5 minutes so a tab left open stays current
-setInterval(() => { load(); }, 5 * 60 * 1000);
 
 function getStockFor(sku){
-  const row = DATA.stock.find(s => s.sku === sku);
-  return row ? Number(row.units) : 0;
+  const r = DATA.stock.find(s => s.sku === sku);
+  return r ? Number(r.units) : 0;
 }
 
-function dailyProductionFor(sku, days){
-  // Use authoritative PLAN_TARGETS via dailyCapacityFor(). Today's production already baked
-  // into stockNow (NS sync ran this morning), so today's contribution is 0.
-  const out = {};
-  const todayIso = isoDate(new Date());
-  days.forEach(d => {
-    const key = isoDate(d);
-    out[key] = (key === todayIso) ? 0 : dailyCapacityFor(sku, d);
-  });
-  return out;
+function getStockUpdated(){
+  let m = null;
+  DATA.stock.forEach(s => { if(s.updated_at && (!m || s.updated_at > m)) m = s.updated_at; });
+  return m;
+}
+function getLatestUpdated(rows){
+  let m = null;
+  (rows||[]).forEach(r => { if(r.updated_at && (!m || r.updated_at > m)) m = r.updated_at; });
+  return m;
 }
 
-function render(){
-  // Build per-SKU projections for the 14-day horizon
-  const skuProjections = {};
-  SKUS.forEach(sku => {
-    const dailyDemand = {};
-    const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days, DATA.orders);
-    const co = overdueOrdersFor(sku, DATA.days, DATA.orders);
-    DATA.days.forEach(d => {
-      const key = isoDate(d);
-      dailyDemand[key] = (fc[key]||0) + (co[key]||0);
-    });
-    const stockNow = getStockFor(sku);
-    const dailyProd = dailyProductionFor(sku, DATA.days);
-    const projection = projectStock(stockNow, dailyDemand, DATA.days, dailyProd);
-    // Days of cover now considers production: stock + 14d production - 14d demand
-    const cover = daysOfCoverWithProduction(stockNow, dailyDemand, dailyProd, DATA.days);
-    skuProjections[sku] = {dailyDemand, dailyProd, projection, stockNow, cover};
-  });
-
-  renderFreshness();
-  renderTiles(skuProjections);
-  renderCoverGrid(skuProjections);
-  renderHeatmap(skuProjections);
-  renderUnfulfillable();
-  renderCapacity();
-  populateWhatIfControls();
-  renderForecast();
-  renderActions(skuProjections);
-  wireExport();
-}
-
-function renderTiles(skuProj){
-  const skusRed = SKUS.filter(s => skuProj[s].cover < 3);
-  const skusAmber = SKUS.filter(s => skuProj[s].cover >= 3 && skuProj[s].cover < 7);
-  const skusGreen = SKUS.filter(s => skuProj[s].cover >= 7);
-  const worstCover = Math.min(...SKUS.map(s => skuProj[s].cover));
-  const worstSku = SKUS.find(s => skuProj[s].cover === worstCover);
-
-  // Demand met % over the horizon
-  let totalDemand = 0;
-  let totalShortfall = 0;
-  let biggestShortSku = null;
-  let biggestShortVal = 0;
-  SKUS.forEach(sku => {
-    const proj = skuProj[sku].projection;
-    proj.forEach(p => {
-      totalDemand += p.demand;
-      if(p.eod < 0){
-        const shortToday = Math.min(-p.eod, p.demand);
-        totalShortfall += shortToday;
-        if(shortToday > biggestShortVal){
-          biggestShortVal = shortToday;
-          biggestShortSku = sku;
-        }
-      }
-    });
-  });
-  const demandMet = totalDemand > 0 ? Math.round(((totalDemand - totalShortfall)/totalDemand)*100) : 100;
-  const demandMetCls = demandMet >= 95 ? 'green' : demandMet >= 80 ? 'amber' : 'red';
-
-  const tiles = [
-    {label:'SKUs at RED (<3 days)', val: skusRed.length, sub: skusRed.length ? skusRed.join(', ') : 'none', cls: skusRed.length ? 'red' : 'green'},
-    {label:'SKUs at AMBER (3-7 days)', val: skusAmber.length, sub: skusAmber.join(', ') || 'none', cls: skusAmber.length ? 'amber' : 'green'},
-    {label:'Worst SKU days cover', val: worstCover.toString(), sub: worstSku, cls: worstCover < 3 ? 'red' : worstCover < 7 ? 'amber' : 'green'},
-    {label:'14-day demand met', val: demandMet+'%', sub: 'across all 5 SKUs', cls: demandMetCls},
-    {label:'Biggest single shortfall', val: biggestShortVal ? fmtNum(biggestShortVal) : '0', sub: biggestShortSku || 'no shortfalls', cls: biggestShortVal ? 'red' : 'green'},
-  ];
-
-  document.getElementById('tiles').innerHTML = tiles.map(t =>
-    `<div class="tile ${t.cls}">
-      <div class="tile-label">${t.label}</div>
-      <div class="tile-value">${t.val}</div>
-      <div class="tile-sub">${t.sub}</div>
-    </div>`
-  ).join('');
-}
-
-function renderCoverGrid(skuProj){
-  const html = SKUS.map(sku => {
-    const cover = skuProj[sku].cover;
-    const stockNow = skuProj[sku].stockNow;
-    const cls = cover < 3 ? 'red' : cover < 7 ? 'amber' : 'green';
-    const widthPct = Math.min(100, Math.max(4, (cover/14)*100));
-    return `<div class="cover-card" onclick="drillInto('${sku}')" style="cursor:pointer">
-      <div class="cover-sku">${sku}</div>
-      <div class="cover-bar"><div class="cover-fill ${cls}" style="width:${widthPct}%"></div></div>
-      <div class="cover-meta">
-        <span>${fmtNum(stockNow)} units on hand</span>
-        <span class="cover-days">${cover} days cover</span>
-      </div>
-    </div>`;
-  }).join('');
-  document.getElementById('coverGrid').innerHTML = html;
-}
-
-function renderHeatmap(skuProj){
-  const todayIso = isoDate(new Date());
-  // Header row
-  let head = '<thead><tr><th class="sku-col">SKU</th>';
-  DATA.days.forEach(d => {
-    const we = isWeekend(d);
-    const cls = (isoDate(d) === todayIso) ? 'today' : (we ? 'weekend' : '');
-    head += `<th class="${cls}">${fmtDate(d)}</th>`;
-  });
-  head += '</tr></thead>';
-
-  // SKU rows
-  let body = '<tbody>';
-  SKUS.forEach(sku => {
-    const proj = skuProj[sku].projection;
-    body += `<tr><td class="sku-name">${sku}</td>`;
-    proj.forEach((p) => {
-      const {cls, shortfall} = classifyDeliveryDay(p);
-      const we = isWeekend(p.date);
-      const cellCls = we ? cls + ' weekend' : cls;
-      const tip = `${sku} ${fmtDate(p.date)}\nStart-of-day stock: ${fmtNum(p.sod)}\nDemand: ${fmtNum(p.demand)}\nProduction: ${fmtNum(p.production)}\nEnd-of-day stock: ${fmtNum(p.eod)}` +
-                  (shortfall > 0 ? `\nSHORTFALL: ${fmtNum(shortfall)} units cannot ship` : '');
-      const display = shortfall > 0 ? `−${fmtNum(shortfall)}` : (cls === 'grey' ? '·' : fmtNum(p.sod));
-      body += `<td class="day ${cellCls}" title="${tip}" onclick="drillInto('${sku}')">${display}</td>`;
-    });
-    body += '</tr>';
-  });
-  body += '</tbody>';
-
-  document.getElementById('heatTable').innerHTML = head + body;
-}
-
-function drillInto(sku){
-  const dailyDemand = {};
-  const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.projDays, DATA.orders);
-  const co = overdueOrdersFor(sku, DATA.projDays, DATA.orders);
-  DATA.projDays.forEach(d => {
-    const key = isoDate(d);
-    dailyDemand[key] = (fc[key]||0) + (co[key]||0);
-  });
-  const stockNow = getStockFor(sku);
-  const dailyProd = dailyProductionFor(sku, DATA.projDays);
-  const projection = projectStock(stockNow, dailyDemand, DATA.projDays, dailyProd);
-
-  // Stockout day
-  const stockoutDay = projection.find(p => p.eod < 0);
-
-  document.getElementById('drilldown').classList.add('active');
-  document.getElementById('drillTitle').textContent = sku + ' - 28-day projection';
-
-  // Breakdown tiles
-  const totalDemand14 = projection.slice(0,14).reduce((s,p)=>s+p.demand,0);
-  const totalCommitted14 = DATA.days.reduce((s,d) => {
-    const k = isoDate(d);
-    return s + (co[k]||0);
-  }, 0);
-  const totalForecast14 = totalDemand14 - totalCommitted14;
-  document.getElementById('breakdown').innerHTML = `
-    <div class="breakdown-tile">
-      <div class="breakdown-label">Stock today</div>
-      <div class="breakdown-val">${fmtNum(stockNow)}</div>
-    </div>
-    <div class="breakdown-tile">
-      <div class="breakdown-label">14-day total demand</div>
-      <div class="breakdown-val">${fmtNum(totalDemand14)}</div>
-    </div>
-    <div class="breakdown-tile">
-      <div class="breakdown-label">Committed (open SOs)</div>
-      <div class="breakdown-val">${fmtNum(totalCommitted14)}</div>
-    </div>
-    <div class="breakdown-tile">
-      <div class="breakdown-label">Forecast / unallocated</div>
-      <div class="breakdown-val">${fmtNum(totalForecast14)}</div>
-    </div>
-  `;
-
-  // Chart
-  const labels = projection.map(p => fmtDate(p.date));
-  const stockLine = projection.map(p => p.eod);
-  const cumDemand = [];
-  let cum = stockNow;
-  projection.forEach(p => { cum -= p.demand; cumDemand.push(cum); });
-
-  if(CHART) CHART.destroy();
-  const ctx = document.getElementById('projChart');
-  CHART = new Chart(ctx, {
-    type:'line',
-    data:{
-      labels,
-      datasets:[
-        {label:'Projected end-of-day stock', data: stockLine, borderColor:'#0E7CCE', backgroundColor:'rgba(14,124,206,.15)', fill:true, tension:0.2, pointRadius:3},
-        {label:'Stockout threshold', data: labels.map(()=>0), borderColor:'#C0392B', borderDash:[6,4], pointRadius:0, fill:false},
-      ]
-    },
-    options:{
-      responsive:true, maintainAspectRatio:false,
-      plugins:{
-        legend:{position:'bottom', labels:{font:{family:'Arial',size:11}}},
-        title:{display:true, text: stockoutDay ? ('STOCKOUT projected ' + fmtDate(stockoutDay.date)) : 'No projected stockout in 28 days', color: stockoutDay ? '#C0392B' : '#27AE60', font:{family:'Arial',size:13,weight:'bold'}}
-      },
-      scales:{
-        x:{ticks:{font:{family:'Arial',size:10}}},
-        y:{title:{display:true,text:'Units on hand'}, ticks:{font:{family:'Arial',size:10}, callback:v=>v.toLocaleString('en-AU')}}
-      }
-    }
-  });
-  document.getElementById('drilldown').scrollIntoView({behavior:'smooth', block:'start'});
-}
-
-window.drillInto = drillInto;
-
-// ============================================================
-// FRESHNESS PANEL — visible "when did each data source last update"
-// ============================================================
-function ageStr(iso){
-  if(!iso) return 'never';
-  const ts = new Date(iso).getTime();
-  const now = Date.now();
-  const mins = Math.round((now - ts) / 60000);
-  if(mins < 60) return `${mins}m ago`;
-  if(mins < 60*24) return `${Math.round(mins/60)}h ago`;
-  return `${Math.round(mins/(60*24))}d ago`;
-}
-
-function freshnessClass(iso, amberHours, redHours){
-  if(!iso) return 'dead';
-  const hours = (Date.now() - new Date(iso).getTime()) / 3600000;
-  if(hours > redHours) return 'dead';
-  if(hours > amberHours) return 'stale';
-  return '';
-}
-
-function latest(rows, dateField){
-  let max = null;
-  rows.forEach(r => {
-    const v = r[dateField];
-    if(v && (!max || v > max)) max = v;
-  });
-  return max;
-}
-
-function renderFreshness(){
-  const stockLatest = latest(DATA.stock, 'updated_at');
-  const ordersLatest = latest(DATA.orders, 'updated_at');
-  const colesLatest = latest(DATA.forecasts.filter(f => f._src === 'coles'), 'updated_at');
-  const wwLatest = latest(DATA.forecasts.filter(f => f._src === 'ww'), 'updated_at');
-  const metcashLatest = latest(DATA.forecasts.filter(f => f._src === 'metcash'), 'updated_at');
-
-  const cards = [
-    {label:'Stock + open SOs', val: ageStr(stockLatest), iso: stockLatest, amber:24, red:48},
-    {label:'Woolworths forecast', val: ageStr(wwLatest), iso: wwLatest, amber:7*24, red:14*24},
-    {label:'Coles forecast', val: ageStr(colesLatest), iso: colesLatest, amber:7*24, red:14*24},
-    {label:'Metcash forecast', val: ageStr(metcashLatest), iso: metcashLatest, amber:7*24, red:14*24},
-  ];
-
-  document.getElementById('freshness').innerHTML = cards.map(c =>
-    `<div class="fresh-card ${freshnessClass(c.iso, c.amber, c.red)}">
-      <div class="fresh-label">${c.label}</div>
-      <div class="fresh-value">${c.val}</div>
-      <div class="fresh-age">${c.iso ? new Date(c.iso).toLocaleString('en-AU') : '—'}</div>
-    </div>`
-  ).join('');
-}
-
-// ============================================================
-// LEAD-TIME / BOTTLENECK CHECK
-// For a SKU with a shortfall on day D, can the responsible line PHYSICALLY produce
-// enough between today and day D to clear it (at theoretical max, weekdays only)?
-// If no, this is a customer-conversation problem, not a production-fix problem.
-// ============================================================
-const SKU_TO_LINE = {
-  '10L Cask': 'HMPS (10L Cask)',
-  '5L Cask': 'Cask Line A (5L/10L)',
-  '2L Bottle': 'SM Bottle (2L)',
-  '600ml 12pk': 'EP New Line (600ml)',
-  '600ml 6pk': 'EP New Line (600ml)',
-};
-
-function maxRecoverable(sku, byDate){
-  // How many units can we MAX produce between today and byDate (weekdays only) at theoretical max?
-  const line = SKU_TO_LINE[sku];
-  const max = (LINE_THEORETICAL_MAX[line] && LINE_THEORETICAL_MAX[line].units_per_day) || 0;
-  // 600ml shares EP New Line capacity, so each gets half of max
-  const share = (sku === '600ml 12pk' || sku === '600ml 6pk') ? 0.5 : 1.0;
+// ── COMPUTE: at-risk orders walking forward day-by-day ──
+function computeAtRisk(){
   const today = new Date(); today.setHours(0,0,0,0);
-  let weekdays = 0;
-  const cur = new Date(today);
-  while(cur < byDate){
-    if(cur.getDay() !== 0 && cur.getDay() !== 6) weekdays++;
-    cur.setDate(cur.getDate() + 1);
-  }
-  return Math.round(max * share * weekdays);
-}
-
-// ============================================================
-// CSV EXPORT
-// ============================================================
-function wireExport(){
-  const btn = document.getElementById('exportCsv');
-  if(!btn) return;
-  btn.onclick = () => {
-    let csv = 'SKU,' + DATA.days.map(d => d.toLocaleDateString('en-AU')).join(',') + '\n';
-    SKUS.forEach(sku => {
-      const dailyDemand = {};
-      const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days, DATA.orders);
-      const co = overdueOrdersFor(sku, DATA.days, DATA.orders);
-      DATA.days.forEach(d => {
-        const k = isoDate(d);
-        dailyDemand[k] = (fc[k]||0) + (co[k]||0);
-      });
-      const stockNow = getStockFor(sku);
-      const dailyProd = dailyProductionFor(sku, DATA.days);
-      const projection = projectStock(stockNow, dailyDemand, DATA.days, dailyProd);
-      const cells = projection.map(p => {
-        const {cls, shortfall} = classifyDeliveryDay(p);
-        return shortfall > 0 ? `-${shortfall}` : (cls === 'grey' ? '0' : p.sod);
-      });
-      csv += `"${sku}",${cells.join(',')}\n`;
-    });
-    const blob = new Blob([csv], {type: 'text/csv'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `pureau_planner_heatmap_${isoDate(new Date())}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-}
-
-// ============================================================
-// SECTION 6 — UNFULFILLABLE ORDERS
-// For each open order line, walk forward by ship_date. Decrement projected stock.
-// If the line cannot be fully shipped from projected stock at its ship_date, flag it.
-// ============================================================
-function renderUnfulfillable(){
-  const todayIso = isoDate(new Date());
-  const horizonEnd = new Date(); horizonEnd.setDate(horizonEnd.getDate() + 14);
+  const todayIso = isoDate(today);
+  const horizonEnd = new Date(today); horizonEnd.setDate(today.getDate() + HORIZON_DAYS);
   const horizonEndIso = isoDate(horizonEnd);
 
-  // Split orders: overdue (ship_date < today) vs upcoming (today..today+14)
-  const overdueLines = [];
-  const upcomingLinesBySku = {};
-  SKUS.forEach(s => upcomingLinesBySku[s] = []);
+  const overdue = [];
+  const futureLinesBySku = {}; SKUS.forEach(s => futureLinesBySku[s] = []);
   DATA.orders.forEach(l => {
     if(!l.ship_date || !SKUS.includes(l.sku)) return;
     if(l.ship_date < todayIso){
-      overdueLines.push(l);
+      overdue.push(l);
     } else if(l.ship_date <= horizonEndIso){
-      upcomingLinesBySku[l.sku].push(l);
+      futureLinesBySku[l.sku].push(l);
     }
   });
-  // Sort each
-  overdueLines.sort((a,b) => a.ship_date.localeCompare(b.ship_date));
-  SKUS.forEach(s => upcomingLinesBySku[s].sort((a,b) => a.ship_date.localeCompare(b.ship_date)));
+  overdue.sort((a,b) => a.ship_date.localeCompare(b.ship_date) || a.doc_num.localeCompare(b.doc_num));
+  SKUS.forEach(s => futureLinesBySku[s].sort((a,b) => a.ship_date.localeCompare(b.ship_date) || a.doc_num.localeCompare(b.doc_num)));
 
-  // === OVERDUE DISPATCHES ===
-  const overdueEl = document.getElementById('overdueDispatches');
-  if(overdueLines.length === 0){
-    overdueEl.innerHTML = '<div class="section-empty">No overdue dispatches.</div>';
-  } else {
-    let html = `<div class="unful-headers"><div>SKU</div><div>SO #</div><div>Customer</div><div>Ship date</div><div style="text-align:right">Units</div><div style="text-align:right">Days late</div></div>`;
-    overdueLines.forEach(line => {
-      const cust = (line.customer || '').split(':').pop().trim().slice(0, 50);
-      const daysLate = Math.round((new Date(todayIso) - new Date(line.ship_date)) / 86400000);
-      html += `<div class="unful-row">
-        <div class="unful-sku">${line.sku}</div>
-        <div class="unful-so">${line.doc_num||''}</div>
-        <div class="unful-cust">${cust}</div>
-        <div class="unful-date">${fmtDate(new Date(line.ship_date))}</div>
-        <div class="unful-qty">${fmtNum(line.units_ordered)}</div>
-        <div class="unful-short">${daysLate}d</div>
-      </div>`;
-    });
-    overdueEl.innerHTML = html;
-  }
-
-  // === UPCOMING UNFULFILLABLE (production-aware) ===
-  // For each SKU, walk forward by ship_date. Each day, add that day's planned production
-  // to available stock. If an order's units > available, flag it.
-  const unfulfillable = [];
+  // Walk forward per SKU, accumulating production day-by-day, decrement by each line's units
+  const atRisk = [];
   SKUS.forEach(sku => {
     let avail = getStockFor(sku);
     let lastDate = todayIso;
-    upcomingLinesBySku[sku].forEach(line => {
-      // Add production from lastDate (exclusive) to ship_date (exclusive)
-      // Production already includes weekends/holidays as 0
+    futureLinesBySku[sku].forEach(line => {
+      // Add production from lastDate (exclusive) up to line.ship_date (inclusive of ship date production? No: production banked overnight, available at start of next day)
       const sd = new Date(line.ship_date);
-      const ld = new Date(lastDate);
-      const cur = new Date(ld);
-      cur.setDate(cur.getDate() + 1);
-      while(cur < sd){
-        avail += dailyCapacityFor(sku, cur);
-        cur.setDate(cur.getDate() + 1);
+      const cur = new Date(lastDate); cur.setDate(cur.getDate()+1);
+      while(cur <= sd){
+        avail += dailyCapacity(sku, cur);
+        cur.setDate(cur.getDate()+1);
       }
       lastDate = line.ship_date;
       const need = Number(line.units_ordered) || 0;
       if(avail >= need){
         avail -= need;
       } else {
-        unfulfillable.push({sku, line, shortfall: need - Math.max(0, avail), avail: Math.max(0, avail)});
+        atRisk.push({
+          sku, line,
+          short: need - Math.max(0, avail),
+          reason: reasonForShortfall(sku, line.ship_date),
+        });
         avail = 0;
       }
     });
   });
 
-  const c = document.getElementById('unfulfillable');
-  if(unfulfillable.length === 0){
-    c.innerHTML = '<div class="section-empty">All upcoming orders covered by current stock + planned production.</div>';
-    return;
-  }
-  let html = `<div class="unful-headers"><div>SKU</div><div>SO #</div><div>Customer</div><div>Ship date</div><div style="text-align:right">Need</div><div style="text-align:right">Short</div></div>`;
-  unfulfillable.forEach(u => {
-    const cust = (u.line.customer || '').split(':').pop().trim().slice(0, 50);
-    html += `<div class="unful-row">
-      <div class="unful-sku">${u.sku}</div>
-      <div class="unful-so">${u.line.doc_num||''}</div>
-      <div class="unful-cust">${cust}</div>
-      <div class="unful-date">${fmtDate(new Date(u.line.ship_date))}</div>
-      <div class="unful-qty">${fmtNum(u.line.units_ordered)}</div>
-      <div class="unful-short">${fmtNum(u.shortfall)}</div>
-    </div>`;
-  });
-  c.innerHTML = html;
+  return {overdue, atRisk};
 }
 
-// ============================================================
-// SECTION 3 — PRODUCTION CAPACITY CALENDAR
-// Run rate (4-week NetSuite Build avg) vs theoretical max per line.
-// ============================================================
-function renderCapacity(){
-  const c = document.getElementById('capacity');
-  let html = '<table class="capacity"><thead><tr><th class="line-col">Line / SKU</th>';
-  const todayIso = isoDate(new Date());
-  DATA.days.forEach(d => {
-    const cls = (isoDate(d) === todayIso) ? 'today' : (isWeekend(d) ? 'weekend' : '');
-    html += `<th class="${cls}">${fmtDate(d)}</th>`;
-  });
-  html += '</tr></thead><tbody>';
-  Object.entries(LINE_THEORETICAL_MAX).forEach(([line, cfg]) => {
-    const sku = cfg.sku;
-    const rate = sku === '600ml mix'
-      ? (DAILY_PROD_RATE['600ml 12pk'] + DAILY_PROD_RATE['600ml 6pk'])
-      : (DAILY_PROD_RATE[sku] || 0);
-    const max = cfg.units_per_day;
-    const utilPct = Math.round((rate/max) * 100);
-    html += `<tr><td class="line-name">${line}<br><small style="color:#666;font-weight:normal">Run rate ${rate.toLocaleString('en-AU')}/d · Max ${max.toLocaleString('en-AU')}/d · ${utilPct}%</small></td>`;
-    DATA.days.forEach(d => {
-      const we = isWeekend(d);
-      let cls, content, tip;
-      if(we){
-        cls = 'idle weekend'; content = '·';
-        tip = 'Weekend (no production)';
-      } else {
-        // Run rate is the assumed planned production. Compare to max.
-        if(utilPct >= 90){ cls = 'full'; }
-        else if(utilPct >= 70){ cls = 'tight'; }
-        else { cls = 'ok'; }
-        content = rate.toLocaleString('en-AU');
-        tip = `${line} ${fmtDate(d)}\nPlanned: ${rate.toLocaleString('en-AU')}\nMax: ${max.toLocaleString('en-AU')}\nUtilisation: ${utilPct}%`;
-      }
-      html += `<td class="cap ${cls}" title="${tip}">${content}</td>`;
+// ── COMPUTE: next-week forecast vs supply per SKU ──
+function computeNextWeek(){
+  // "Next week" = the upcoming Mon-Sun starting on the next Monday from today (inclusive if today is Monday)
+  const today = new Date(); today.setHours(0,0,0,0);
+  const dow = today.getDay();
+  const daysToMonday = (dow === 0) ? 1 : (dow === 1 ? 7 : (8 - dow));
+  const nextMonday = new Date(today); nextMonday.setDate(today.getDate() + daysToMonday);
+  const nextSunday = new Date(nextMonday); nextSunday.setDate(nextMonday.getDate() + 6);
+  const nextMondayIso = isoDate(nextMonday);
+
+  const allFc = [...DATA.forecasts.coles, ...DATA.forecasts.ww, ...DATA.forecasts.metcash];
+
+  const rows = [];
+  SKUS.forEach(sku => {
+    // Forecast for next week (matching by week_date in [nextMonday..nextSunday])
+    let fc = 0;
+    allFc.forEach(f => {
+      if(f.sku !== sku || !f.week_date) return;
+      const wd = f.week_date.slice(0,10);
+      if(wd >= nextMondayIso && wd <= isoDate(nextSunday)) fc += Number(f.units)||0;
     });
-    html += '</tr>';
+
+    // Open SOs already placed for next week (subset of next 14 days SO data)
+    let nextWeekSO = 0;
+    DATA.orders.forEach(l => {
+      if(l.sku !== sku || !l.ship_date) return;
+      if(l.ship_date >= nextMondayIso && l.ship_date <= isoDate(nextSunday)) nextWeekSO += Number(l.units_ordered)||0;
+    });
+    const nextWeekDemand = Math.max(fc, nextWeekSO);
+
+    // Open SOs ship_date < next Monday (must clear before next week starts)
+    let preWeekSO = 0;
+    DATA.orders.forEach(l => {
+      if(l.sku !== sku || !l.ship_date) return;
+      if(l.ship_date < nextMondayIso) preWeekSO += Number(l.units_ordered)||0;
+    });
+
+    // Production from today up to end of next week
+    let prodToWeekEnd = 0;
+    const cur = new Date(today); cur.setDate(today.getDate()+1);
+    while(cur <= nextSunday){
+      prodToWeekEnd += dailyCapacity(sku, cur);
+      cur.setDate(cur.getDate()+1);
+    }
+
+    const stock = getStockFor(sku);
+    // Stock available to meet next-week demand = current stock + production - SOs already placed before next week
+    const supplyForNextWeek = stock + prodToWeekEnd - preWeekSO;
+    const surplus = supplyForNextWeek - nextWeekDemand;
+
+    rows.push({sku, stock, preWeekSO, prodToWeekEnd, nextWeekDemand, supplyForNextWeek, surplus});
+  });
+  return {rows, nextMonday, nextSunday};
+}
+
+// ── RENDER ──
+function render(){
+  const {overdue, atRisk} = computeAtRisk();
+  const {rows: nextWeekRows, nextMonday, nextSunday} = computeNextWeek();
+
+  // Banner
+  const totalAtRisk = atRisk.length + overdue.length;
+  const banner = document.getElementById('banner');
+  if(totalAtRisk === 0){
+    banner.className = 'banner green';
+    banner.innerHTML = `<div class="banner-count">0</div><div>All open orders shippable. No at-risk lines in next 14 days. No overdue dispatches.</div>`;
+  } else {
+    banner.className = 'banner red';
+    banner.innerHTML = `<div class="banner-count">${totalAtRisk}</div><div>order line${totalAtRisk!==1?'s':''} at risk over the next 14 days. ${overdue.length} overdue, ${atRisk.length} can't ship in time. Detail below.</div>`;
+  }
+
+  // Overdue
+  document.getElementById('overdueCount').textContent = overdue.length === 0 ? '' : `${overdue.length} line${overdue.length!==1?'s':''}`;
+  const overduePanel = document.getElementById('overduePanel');
+  if(overdue.length === 0){
+    overduePanel.innerHTML = '<div class="panel-empty">No overdue dispatches.</div>';
+  } else {
+    const todayIso = isoDate(new Date());
+    let html = '<table><thead><tr><th>SKU</th><th>SO #</th><th>Customer</th><th>Original ship date</th><th class="right">Units</th><th class="right">Days late</th></tr></thead><tbody>';
+    overdue.forEach(l => {
+      const cust = (l.customer||'').split(':').pop().trim().slice(0, 70);
+      const days = Math.round((new Date(todayIso) - new Date(l.ship_date)) / 86400000);
+      html += `<tr>
+        <td class="sku">${l.sku}</td>
+        <td class="so"><a href="${NS_TRAN_SEARCH(l.doc_num)}" target="_blank" style="color:var(--blue);text-decoration:none">${l.doc_num}</a></td>
+        <td>${cust}</td>
+        <td>${fmtDateLong(new Date(l.ship_date))}</td>
+        <td class="right">${fmt(l.units_ordered)}</td>
+        <td class="late">${days} d</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    overduePanel.innerHTML = '<div class="toolbar"><button onclick="exportCsv(\'overdue\')">Export CSV</button></div>' + html;
+  }
+
+  // At-risk
+  document.getElementById('atriskCount').textContent = atRisk.length === 0 ? '' : `${atRisk.length} line${atRisk.length!==1?'s':''}`;
+  const atriskPanel = document.getElementById('atriskPanel');
+  if(atRisk.length === 0){
+    atriskPanel.innerHTML = '<div class="panel-empty">All orders shipping in next 14 days are covered by current stock plus planned production.</div>';
+  } else {
+    let html = '<table><thead><tr><th>SKU</th><th>SO #</th><th>Customer</th><th>Ship date</th><th class="right">Units</th><th class="right">Short</th><th>Reason</th></tr></thead><tbody>';
+    atRisk.forEach(r => {
+      const cust = (r.line.customer||'').split(':').pop().trim().slice(0, 70);
+      html += `<tr>
+        <td class="sku">${r.sku}</td>
+        <td class="so"><a href="${NS_TRAN_SEARCH(r.line.doc_num)}" target="_blank" style="color:var(--blue);text-decoration:none">${r.line.doc_num}</a></td>
+        <td>${cust}</td>
+        <td>${fmtDateLong(new Date(r.line.ship_date))}</td>
+        <td class="right">${fmt(r.line.units_ordered)}</td>
+        <td class="short">${fmt(r.short)}</td>
+        <td class="reason">${r.reason}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    atriskPanel.innerHTML = '<div class="toolbar"><button onclick="exportCsv(\'atrisk\')">Export CSV</button></div>' + html;
+  }
+
+  // Next week
+  const nwPanel = document.getElementById('nextweekPanel');
+  let nwHtml = `<div style="padding:10px 14px;font-size:11px;color:#666;border-bottom:1px solid var(--ltgrey)">Week ${fmtDate(nextMonday)} – ${fmtDate(nextSunday)}. Demand = MAX(forecast, confirmed SOs) for that week. Supply = current stock + production through end of next week, less SOs that must ship before then.</div>`;
+  nwHtml += '<table><thead><tr><th>SKU</th><th class="right">Stock today</th><th class="right">Pre-week SOs</th><th class="right">Production to end of next week</th><th class="right">Next week demand</th><th class="right">Surplus / Shortfall</th></tr></thead><tbody>';
+  nextWeekRows.forEach(r => {
+    const cls = r.surplus >= 0 ? 'green' : 'red';
+    const surplusCls = r.surplus >= 0 ? 'surplus' : 'short';
+    nwHtml += `<tr class="summary-row ${cls}">
+      <td class="sku">${r.sku}</td>
+      <td class="right">${fmt(r.stock)}</td>
+      <td class="right">${fmt(r.preWeekSO)}</td>
+      <td class="right">${fmt(r.prodToWeekEnd)}</td>
+      <td class="right">${fmt(r.nextWeekDemand)}</td>
+      <td class="${surplusCls}">${fmtSign(r.surplus)}</td>
+    </tr>`;
+  });
+  nwHtml += '</tbody></table>';
+  nwPanel.innerHTML = nwHtml;
+
+  // Reconciliation to NetSuite
+  renderRecon();
+
+  // Freshness
+  const stockLatest = getStockUpdated();
+  const ordersLatest = getLatestUpdated(DATA.orders);
+  const colesLatest = getLatestUpdated(DATA.forecasts.coles);
+  const wwLatest = getLatestUpdated(DATA.forecasts.ww);
+  const metcashLatest = getLatestUpdated(DATA.forecasts.metcash);
+  function freshClass(iso, amberH, redH){
+    if(!iso) return 'red';
+    const h = (Date.now() - new Date(iso).getTime())/3600000;
+    if(h > redH) return 'red';
+    if(h > amberH) return 'amber';
+    return '';
+  }
+  const cards = [
+    {l:'Stock', v: ageStr(stockLatest), iso:stockLatest, a:24, r:48},
+    {l:'Open SOs', v: ageStr(ordersLatest), iso:ordersLatest, a:24, r:48},
+    {l:'WW forecast', v: ageStr(wwLatest), iso:wwLatest, a:7*24, r:14*24},
+    {l:'Coles forecast', v: ageStr(colesLatest), iso:colesLatest, a:7*24, r:14*24},
+    {l:'Metcash forecast', v: ageStr(metcashLatest), iso:metcashLatest, a:7*24, r:14*24},
+  ];
+  document.getElementById('freshGrid').innerHTML = cards.map(c =>
+    `<div class="fresh-cell ${freshClass(c.iso, c.a, c.r)}">
+      <div class="fresh-label">${c.l}</div>
+      <div class="fresh-value">${c.v}</div>
+      <div class="fresh-when">${c.iso ? new Date(c.iso).toLocaleString('en-AU') : 'never'}</div>
+    </div>`).join('');
+}
+
+function renderRecon(){
+  // Per-SKU stock from Supabase (mirrors NS Report 752)
+  let stockTotalUnits = 0, stockTotalPallets = 0;
+  const stockRows = SKUS.map(sku => {
+    const r = DATA.stock.find(s => s.sku === sku);
+    const u = r ? Number(r.units) : 0;
+    const p = r ? Number(r.pallets) : 0;
+    stockTotalUnits += u; stockTotalPallets += p;
+    return {sku, units:u, pallets:p, when: r?.updated_at};
+  });
+
+  // Open SO totals from Supabase (mirrors saved search 6137 ABH-only Pending Fulfillment)
+  const soBySku = {};
+  SKUS.forEach(s => soBySku[s] = {lines:0, units:0});
+  DATA.orders.forEach(l => {
+    if(!soBySku[l.sku]) return;
+    soBySku[l.sku].lines += 1;
+    soBySku[l.sku].units += Number(l.units_ordered)||0;
+  });
+  let soTotalLines = 0, soTotalUnits = 0;
+  SKUS.forEach(s => { soTotalLines += soBySku[s].lines; soTotalUnits += soBySku[s].units; });
+
+  // Forecast totals per retailer (current view of all forward forecast weeks)
+  const fcByRetailer = {
+    'Coles': DATA.forecasts.coles,
+    'Woolworths': DATA.forecasts.ww,
+    'Metcash': DATA.forecasts.metcash,
+  };
+
+  let html = `
+    <div style="padding:10px 14px;font-size:11px;color:#666;border-bottom:1px solid var(--ltgrey)">
+      Click each link to view the source in NetSuite. The numbers below are what this planner sees in Supabase, sourced via the hourly sync (<code>stock_order_sync.py</code>) from NS Reports + SuiteQL. They should match NS exactly within sync drift (max 1 hour).
+    </div>
+  `;
+
+  // Stock recon
+  html += '<table><thead><tr><th colspan="5" style="background:var(--ltgrey);color:var(--navy);font-size:12px;padding:8px 10px;text-transform:none;letter-spacing:0">Stock on hand &mdash; <a href="' + NS_REPORT_STOCK + '" target="_blank" style="color:var(--blue)">View NS Report 752</a></th></tr>';
+  html += '<tr><th>SKU</th><th class="right">Units</th><th class="right">Pallets</th><th>Sync date</th><th></th></tr></thead><tbody>';
+  stockRows.forEach(r => {
+    html += `<tr><td class="sku">${r.sku}</td><td class="right">${fmt(r.units)}</td><td class="right">${(r.pallets||0).toFixed(1)}</td><td>${r.when ? new Date(r.when).toLocaleDateString('en-AU') : '—'}</td><td></td></tr>`;
+  });
+  html += `<tr style="background:var(--ltgrey);font-weight:bold"><td>TOTAL</td><td class="right">${fmt(stockTotalUnits)}</td><td class="right">${stockTotalPallets.toFixed(1)}</td><td colspan="2"></td></tr>`;
+  html += '</tbody></table>';
+
+  // SO recon
+  html += '<table style="margin-top:14px"><thead><tr><th colspan="4" style="background:var(--ltgrey);color:var(--navy);font-size:12px;padding:8px 10px;text-transform:none;letter-spacing:0">Open Sales Orders (Pending Fulfillment, ABH subsidiary 2) &mdash; <a href="' + NS_SAVED_SEARCH_OPEN_SOS + '" target="_blank" style="color:var(--blue)">View NS saved search 6137</a></th></tr>';
+  html += '<tr><th>SKU</th><th class="right">SO line count</th><th class="right">Units</th><th></th></tr></thead><tbody>';
+  SKUS.forEach(s => {
+    html += `<tr><td class="sku">${s}</td><td class="right">${soBySku[s].lines}</td><td class="right">${fmt(soBySku[s].units)}</td><td></td></tr>`;
+  });
+  html += `<tr style="background:var(--ltgrey);font-weight:bold"><td>TOTAL</td><td class="right">${soTotalLines}</td><td class="right">${fmt(soTotalUnits)}</td><td></td></tr>`;
+  html += '</tbody></table>';
+
+  // Forecast recon
+  html += '<table style="margin-top:14px"><thead><tr><th colspan="4" style="background:var(--ltgrey);color:var(--navy);font-size:12px;padding:8px 10px;text-transform:none;letter-spacing:0">Retailer forecasts (sent by email, parsed by attachment_router into Supabase)</th></tr>';
+  html += '<tr><th>Retailer</th><th class="right">Forecast rows in Supabase</th><th class="right">Total units (all forward weeks)</th><th>Last received</th></tr></thead><tbody>';
+  Object.entries(fcByRetailer).forEach(([retailer, rows]) => {
+    const units = rows.reduce((s,r) => s + (Number(r.units)||0), 0);
+    const last = rows.reduce((m,r) => (r.updated_at && (!m || r.updated_at > m)) ? r.updated_at : m, null);
+    html += `<tr><td class="sku">${retailer}</td><td class="right">${rows.length}</td><td class="right">${fmt(units)}</td><td>${last ? new Date(last).toLocaleDateString('en-AU') : '—'}</td></tr>`;
   });
   html += '</tbody></table>';
-  html += '<div style="font-size:11px;color:#888;margin-top:8px"><b>Run rate</b> = average daily production from NetSuite Build records, last 4 weeks (W14-W17, 28 Mar - 24 Apr). <b>Max</b> = theoretical line capacity per CLAUDE.md. <b>Green</b> = comfortable headroom. <b>Amber</b> = 70-90% utilisation. <b>Red</b> = 90%+ utilisation, no buffer for breakdown.</div>';
-  c.innerHTML = html;
+
+  document.getElementById('reconPanel').innerHTML = html;
 }
 
-// ============================================================
-// SECTION 4 — WHAT-IF SIMULATOR
-// Rerun the heatmap with one line removed for N days starting D.
-// ============================================================
-function populateWhatIfControls(){
-  const lineSel = document.getElementById('wifLine');
-  if(lineSel.options.length > 0) return; // already populated
-  Object.keys(LINE_THEORETICAL_MAX).forEach(l => {
-    const o = document.createElement('option'); o.value = l; o.textContent = l;
-    lineSel.appendChild(o);
-  });
-  const daysSel = document.getElementById('wifDays');
-  [1,2,3,5,7].forEach(n => {
-    const o = document.createElement('option'); o.value = n; o.textContent = n;
-    daysSel.appendChild(o);
-  });
-  const startSel = document.getElementById('wifStart');
-  DATA.days.forEach(d => {
-    const o = document.createElement('option'); o.value = isoDate(d); o.textContent = fmtDate(d);
-    startSel.appendChild(o);
-  });
-
-  document.getElementById('wifRun').onclick = () => {
-    const line = lineSel.value;
-    const days = parseInt(daysSel.value);
-    const start = startSel.value;
-    runWhatIf(line, days, start);
-  };
-  document.getElementById('wifClear').onclick = () => {
-    document.getElementById('wifResult').innerHTML = '';
-  };
-}
-
-function runWhatIf(line, daysDown, startIso){
-  const affectedSku = LINE_THEORETICAL_MAX[line] && LINE_THEORETICAL_MAX[line].sku;
-  if(!affectedSku){
-    document.getElementById('wifResult').innerHTML = '<div class="section-empty">No SKU mapping for that line.</div>';
-    return;
-  }
-  const affected = (affectedSku === '600ml mix') ? ['600ml 12pk','600ml 6pk'] : [affectedSku];
-
-  const before = {}; const after = {};
-  SKUS.forEach(sku => {
-    const dailyDemand = {};
-    const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days, DATA.orders);
-    const co = overdueOrdersFor(sku, DATA.days, DATA.orders);
-    DATA.days.forEach(d => {
-      const k = isoDate(d);
-      dailyDemand[k] = (fc[k]||0) + (co[k]||0);
+function exportCsv(which){
+  const {overdue, atRisk} = computeAtRisk();
+  let csv, name;
+  if(which === 'overdue'){
+    name = 'pureau_overdue_dispatches';
+    csv = 'SKU,SO,Customer,Original ship date,Units,Days late\n';
+    const todayIso = isoDate(new Date());
+    overdue.forEach(l => {
+      const cust = (l.customer||'').replace(/"/g,'""');
+      const days = Math.round((new Date(todayIso) - new Date(l.ship_date))/86400000);
+      csv += `"${l.sku}","${l.doc_num}","${cust}","${l.ship_date}",${l.units_ordered},${days}\n`;
     });
-    const stockNow = getStockFor(sku);
-    const dailyProd = dailyProductionFor(sku, DATA.days);
-    before[sku] = daysOfCoverWithProduction(stockNow, dailyDemand, dailyProd, DATA.days);
-    after[sku] = before[sku];
-  });
-
-  // Lost production = run rate × weekdays in down window (use ACTUAL run rate, not theoretical max)
-  const startDate = new Date(startIso);
-  affected.forEach(sku => {
-    const rate = DAILY_PROD_RATE[sku] || 0;
-    const dailyDemand = {};
-    const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days, DATA.orders);
-    const co = overdueOrdersFor(sku, DATA.days, DATA.orders);
-    DATA.days.forEach(d => {
-      const k = isoDate(d);
-      dailyDemand[k] = (fc[k]||0) + (co[k]||0);
+  } else {
+    name = 'pureau_at_risk_orders';
+    csv = 'SKU,SO,Customer,Ship date,Units,Short,Reason\n';
+    atRisk.forEach(r => {
+      const cust = (r.line.customer||'').replace(/"/g,'""');
+      const reason = r.reason.replace(/"/g,'""');
+      csv += `"${r.sku}","${r.line.doc_num}","${cust}","${r.line.ship_date}",${r.line.units_ordered},${r.short},"${reason}"\n`;
     });
-    // Build a what-if dailyProd that zeroes out the down window
-    const wifProd = dailyProductionFor(sku, DATA.days);
-    for(let i=0; i<daysDown; i++){
-      const d = new Date(startDate); d.setDate(startDate.getDate()+i);
-      const k = isoDate(d);
-      if(k in wifProd && !isWeekend(d)) wifProd[k] = 0;
-    }
-    after[sku] = daysOfCoverWithProduction(getStockFor(sku), dailyDemand, wifProd, DATA.days);
-  });
-
-  // Lost production summary
-  let lostProd = 0;
-  for(let i=0; i<daysDown; i++){
-    const d = new Date(startDate); d.setDate(startDate.getDate()+i);
-    if(!isWeekend(d)){
-      affected.forEach(sku => { lostProd += (DAILY_PROD_RATE[sku] || 0); });
-    }
   }
-
-  let html = `<div style="font-size:12px;color:#444;margin-bottom:8px"><b>Scenario:</b> ${line} down for ${daysDown} day${daysDown>1?'s':''} from ${fmtDate(startDate)}. Lost production: ${fmtNum(lostProd)} units (using current run rate).</div>`;
-  html += '<div class="whatif-comparison">';
-  SKUS.forEach(sku => {
-    const b = before[sku], a = after[sku];
-    const worsen = a < b;
-    html += `<div class="wif-card ${worsen?'worse':'same'}">
-      <div class="wif-card-sku">${sku}</div>
-      <div class="wif-card-vals">Cover: <b>${b}d</b> → <b style="${worsen?'color:#C0392B':'color:#27AE60'}">${a}d</b></div>
-    </div>`;
-  });
-  html += '</div>';
-  document.getElementById('wifResult').innerHTML = html;
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${name}_${isoDate(new Date())}.csv`; a.click();
+  URL.revokeObjectURL(url);
 }
+window.exportCsv = exportCsv;
 
-// ============================================================
-// SECTION 5 — FORECAST ACCURACY
-// We don't have weekly snapshots of past forecasts vs actuals yet, so v1 shows
-// a "forecast volume vs current stock + production capacity" view as a proxy.
-// Future v2 will use forecast_actuals_log once snapshots have run for 4-8 weeks.
-// ============================================================
-function renderForecast(){
-  // Compute forecast accuracy: forecast vs actual sales for past weeks W14-W17.
-  // Forecast = sum of all retailer forecasts for that week_date (in the live forecast tables).
-  // Actual = HISTORICAL_SALES_W14_W17 (from NS Report 733).
-  const c = document.getElementById('forecast');
-  const w14_17_starts = {W14: '2026-03-28', W15: '2026-04-04', W16: '2026-04-11', W17: '2026-04-18'};
-
-  let html = '<table class="forecast"><thead><tr><th>SKU</th><th>Week</th><th>Forecast (units)</th><th>Actual sales</th><th>Error</th><th>Error %</th></tr></thead><tbody>';
-  const skuErrors = {};
-  SKUS.forEach(sku => {
-    skuErrors[sku] = [];
-    Object.entries(w14_17_starts).forEach(([wk, isoStart]) => {
-      const target = new Date(isoStart);
-      // Sum forecasts whose week_date matches this Saturday-start week (Sat-Fri convention)
-      let fc = 0;
-      DATA.forecasts.filter(f => f.sku === sku).forEach(f => {
-        const wd = new Date(f.week_date); wd.setHours(0,0,0,0);
-        // Match if forecast week_date falls within target week (target..target+6)
-        const targetEnd = new Date(target); targetEnd.setDate(target.getDate()+6);
-        if(wd >= target && wd <= targetEnd) fc += Number(f.units) || 0;
-      });
-      const actual = HISTORICAL_SALES_W14_W17[sku][wk] || 0;
-      const err = fc - actual;
-      const errPct = actual > 0 ? Math.abs(err) / actual * 100 : 0;
-      const cls = errPct < 10 ? 'err-low' : (errPct < 25 ? 'err-mid' : 'err-high');
-      html += `<tr><td><b>${sku}</b></td><td>${wk}</td><td class="right">${fmtNum(fc)}</td><td class="right">${fmtNum(actual)}</td><td class="right ${cls}">${err>=0?'+':''}${fmtNum(err)}</td><td class="right ${cls}">${errPct.toFixed(1)}%</td></tr>`;
-      if(actual > 0) skuErrors[sku].push(errPct);
-    });
-  });
-  html += '</tbody></table>';
-
-  // Per-SKU average error
-  html += '<div style="margin-top:12px;font-size:12px"><b>Average forecast error per SKU (W14-W17, 4 weeks):</b><br>';
-  SKUS.forEach(sku => {
-    const errs = skuErrors[sku];
-    const avg = errs.length ? errs.reduce((a,b)=>a+b,0)/errs.length : 0;
-    const cls = avg < 10 ? 'err-low' : (avg < 25 ? 'err-mid' : 'err-high');
-    const trust = avg < 10 ? 'High trust' : (avg < 25 ? 'Moderate' : 'Low trust');
-    html += `<span style="display:inline-block;margin-right:14px"><b>${sku}:</b> <span class="${cls}">${avg.toFixed(1)}% (${trust})</span></span>`;
-  });
-  html += '</div>';
-  html += '<div style="font-size:11px;color:#888;margin-top:8px"><b>Method:</b> for each past week, the forecast value (from the live retailer forecast tables, indexed by week_date) is compared to actual NetSuite sales. Error % drives the trust score per SKU. Low trust = bigger buffer needed against forecast surprise.</div>';
-  c.innerHTML = html;
-}
-
-// ============================================================
-// SECTION 7 — ACTION QUEUE
-// Synthesise from the other sections: any RED SKU, any unfulfillable order, any
-// AMBER SKU with no scheduled production, any forecast surge.
-// ============================================================
-function renderActions(skuProjections){
-  const actions = [];
-
-  SKUS.forEach(sku => {
-    const proj = skuProjections[sku].projection;
-    const firstShortfall = proj.find(p => classifyDeliveryDay(p).shortfall > 0);
-    if(firstShortfall){
-      const {shortfall} = classifyDeliveryDay(firstShortfall);
-      const line = SKU_TO_LINE[sku];
-      const lineCfg = LINE_THEORETICAL_MAX[line];
-      const max = lineCfg ? lineCfg.units_per_day : 0;
-      const share = sku.includes('600ml') ? 0.5 : 1.0;
-      const maxDaily = max * share;
-      const recoverable = maxRecoverable(sku, firstShortfall.date);
-      const dateStr = fmtDate(firstShortfall.date);
-      const rate = DAILY_PROD_RATE[sku] || 0;
-      const daysAtMax = maxDaily > 0 ? Math.ceil(shortfall / maxDaily) : 99;
-
-      if(recoverable >= shortfall){
-        actions.push({
-          pri:'urgent',
-          title:`${sku}: ${fmtNum(shortfall)} units short by ${dateStr}`,
-          detail:`Run ${line} at theoretical max (${fmtNum(maxDaily)}/day) for ${daysAtMax} weekday${daysAtMax>1?'s':''} starting today to clear. Current run rate ${fmtNum(rate)}/day is too low — needs uplift.`
-        });
-      } else {
-        actions.push({
-          pri:'urgent',
-          title:`${sku}: ${fmtNum(shortfall)} units short by ${dateStr} — CANNOT produce in time`,
-          detail:`Even at max ${fmtNum(maxDaily)}/day, ${line} can only make ${fmtNum(recoverable)} units before ${dateStr}. Shortfall of ${fmtNum(shortfall - recoverable)} units must be addressed via customer conversation, allocation, or expedited supply — not production.`
-        });
-      }
-    } else {
-      const firstAmber = proj.find(p => classifyDeliveryDay(p).cls === 'amber');
-      if(firstAmber){
-        actions.push({
-          pri:'warn',
-          title:`${sku} tight on ${fmtDate(firstAmber.date)} (no buffer)`,
-          detail:`Supply just covers demand. Any breakdown or surge becomes a stockout. Consider lifting run rate.`
-        });
-      }
-    }
-  });
-
-  // Stale forecast warning
-  const wwLatest = latest(DATA.forecasts.filter(f => f._src === 'ww'), 'updated_at');
-  if(wwLatest){
-    const days = (Date.now() - new Date(wwLatest).getTime()) / 86400000;
-    if(days > 7){
-      actions.push({pri:'warn', title:`Woolworths forecast is ${Math.round(days)} days old`, detail:`Last received ${new Date(wwLatest).toLocaleDateString('en-AU')}. WW typically sends weekly. Chase if not received in next 24h.`});
-    }
-  }
-  const stockLatest = latest(DATA.stock, 'updated_at');
-  if(stockLatest){
-    const hours = (Date.now() - new Date(stockLatest).getTime()) / 3600000;
-    if(hours > 24){
-      actions.push({pri:'warn', title:`Stock sync is ${Math.round(hours)} hours old`, detail:`Stock + open-orders sync runs Mon-Sat 10am via launchd. Investigate stock_order_sync.log if not refreshed.`});
-    }
-  }
-
-  const c = document.getElementById('actions');
-  if(actions.length === 0){
-    c.innerHTML = '<div class="section-empty">All SKUs ship in full across the next 14 days. No action needed.</div>';
-    return;
-  }
-  const order = {urgent:0, warn:1, info:2};
-  actions.sort((a,b) => order[a.pri] - order[b.pri]);
-  c.innerHTML = actions.map(a =>
-    `<div class="action-item ${a.pri}">
-      <div class="action-item-title">${a.title}</div>
-      <div class="action-item-detail">${a.detail}</div>
-    </div>`
-  ).join('');
-}
-
+// Auto-refresh every 5 minutes
+setInterval(load, 5 * 60 * 1000);
 load();
 </script>
 </body>
