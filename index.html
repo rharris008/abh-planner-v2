@@ -86,13 +86,14 @@
   .section-empty{color:#888;font-size:12px;padding:14px 0;text-align:center}
 
   /* Unfulfillable list rows */
-  .unful-row{display:grid;grid-template-columns:90px 1fr 110px 100px 100px;gap:8px;padding:8px 10px;border-left:4px solid var(--red);background:#FFF5F5;border-radius:3px;margin-bottom:6px;font-size:12px;align-items:center}
+  .unful-row{display:grid;grid-template-columns:90px 110px 1fr 110px 100px 100px;gap:8px;padding:8px 10px;border-left:4px solid var(--red);background:#FFF5F5;border-radius:3px;margin-bottom:6px;font-size:12px;align-items:center}
   .unful-sku{font-weight:bold;color:var(--navy)}
+  .unful-so{font-family:Menlo,monospace;font-size:11px;color:var(--navy);font-weight:bold}
   .unful-cust{color:#444}
   .unful-date{color:#666}
   .unful-qty{text-align:right;font-weight:bold;color:var(--red)}
   .unful-short{text-align:right;font-weight:bold;color:var(--red)}
-  .unful-headers{display:grid;grid-template-columns:90px 1fr 110px 100px 100px;gap:8px;padding:6px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#777;font-weight:bold}
+  .unful-headers{display:grid;grid-template-columns:90px 110px 1fr 110px 100px 100px;gap:8px;padding:6px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#777;font-weight:bold}
 
   /* Capacity calendar */
   table.capacity{border-collapse:collapse;width:100%;font-size:11px}
@@ -929,13 +930,14 @@ function renderUnfulfillable(){
   if(overdueLines.length === 0){
     overdueEl.innerHTML = '<div class="section-empty">No overdue dispatches.</div>';
   } else {
-    let html = `<div class="unful-headers"><div>SKU</div><div>Customer / SO</div><div>Ship date</div><div style="text-align:right">Units</div><div style="text-align:right">Days late</div></div>`;
+    let html = `<div class="unful-headers"><div>SKU</div><div>SO #</div><div>Customer</div><div>Ship date</div><div style="text-align:right">Units</div><div style="text-align:right">Days late</div></div>`;
     overdueLines.forEach(line => {
       const cust = (line.customer || '').split(':').pop().trim().slice(0, 50);
       const daysLate = Math.round((new Date(todayIso) - new Date(line.ship_date)) / 86400000);
       html += `<div class="unful-row">
         <div class="unful-sku">${line.sku}</div>
-        <div class="unful-cust">${cust} <small style="color:#888">${line.doc_num||''}</small></div>
+        <div class="unful-so">${line.doc_num||''}</div>
+        <div class="unful-cust">${cust}</div>
         <div class="unful-date">${fmtDate(new Date(line.ship_date))}</div>
         <div class="unful-qty">${fmtNum(line.units_ordered)}</div>
         <div class="unful-short">${daysLate}d</div>
@@ -978,12 +980,13 @@ function renderUnfulfillable(){
     c.innerHTML = '<div class="section-empty">All upcoming orders covered by current stock + planned production.</div>';
     return;
   }
-  let html = `<div class="unful-headers"><div>SKU</div><div>Customer / SO</div><div>Ship date</div><div style="text-align:right">Need</div><div style="text-align:right">Short</div></div>`;
+  let html = `<div class="unful-headers"><div>SKU</div><div>SO #</div><div>Customer</div><div>Ship date</div><div style="text-align:right">Need</div><div style="text-align:right">Short</div></div>`;
   unfulfillable.forEach(u => {
     const cust = (u.line.customer || '').split(':').pop().trim().slice(0, 50);
     html += `<div class="unful-row">
       <div class="unful-sku">${u.sku}</div>
-      <div class="unful-cust">${cust} <small style="color:#888">${u.line.doc_num||''}</small></div>
+      <div class="unful-so">${u.line.doc_num||''}</div>
+      <div class="unful-cust">${cust}</div>
       <div class="unful-date">${fmtDate(new Date(u.line.ship_date))}</div>
       <div class="unful-qty">${fmtNum(u.line.units_ordered)}</div>
       <div class="unful-short">${fmtNum(u.shortfall)}</div>
