@@ -92,7 +92,9 @@
   table.heat{border-collapse:collapse;font-size:11px;table-layout:fixed;width:max-content;min-width:100%}
   table.heat col.skucol{width:140px}
   table.heat col.daycol{width:62px}
-  table.heat th,table.heat td{border:1px solid #E5E5E5;padding:6px 4px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  table.heat th,table.heat td{border:1px solid #E5E5E5;padding:5px 4px;text-align:center;line-height:1.2}
+  table.heat th{white-space:nowrap}
+  table.heat td.skuname{white-space:nowrap}
   table.heat th{background:var(--navy);color:#fff;font-weight:bold;font-size:10px}
   table.heat th.skucol{text-align:left;padding-left:10px}
   table.heat td.skuname{text-align:left;padding-left:10px;font-weight:bold;color:var(--navy);background:var(--ltgrey)}
@@ -157,11 +159,8 @@
   <h2>At-risk orders, today through today + 14 days <span class="count" id="atriskCount"></span></h2>
   <div class="panel" id="atriskPanel"></div>
 
-  <h2>14-day stock-on-hand heatmap (start of day)</h2>
+  <h2>14-day stock + demand heatmap</h2>
   <div class="panel" id="heatmapPanel"></div>
-
-  <h2>Daily demand schedule (when orders ship + forecast spread)</h2>
-  <div class="panel" id="demandPanel"></div>
 
   <h2>4-week forecast vs supply per SKU</h2>
   <div class="panel" id="nextweekPanel"></div>
@@ -551,11 +550,8 @@ function render(){
   renderByCustomer(atRisk, overdue);
   renderActions(atRisk, overdue, nextWeekRows);
 
-  // Stock-on-hand heatmap (14-day, start of day)
+  // Stock + demand combined heatmap (14-day, start of day stock + that day's demand)
   renderHeatmap();
-
-  // Daily demand schedule (parallel to heatmap, shows demand per SKU per day)
-  renderDemand();
 
   // Calculation transparency
   renderCalc();
@@ -759,6 +755,16 @@ function renderActions(atRisk, overdue, nextWeekRows){
 // Build 14-day daily stock-on-hand projection per SKU, walking forward day-by-day with
 // production added (weekday/Saturday/holiday-aware) and demand subtracted (max of forecast/SOs
 // for the week, plus overdue lump onto today).
+// Shift a date forward to the next workday (skip Sat/Sun/PH). Used when a forecast order_date
+// falls on a weekend or public holiday — the dispatch shifts to the next available workday.
+function nextWorkday(dateObj){
+  let d = new Date(dateObj); d.setHours(0,0,0,0);
+  while(d.getDay()===0 || d.getDay()===6 || PUBLIC_HOLIDAYS.has(isoDate(d))){
+    d.setDate(d.getDate()+1);
+  }
+  return d;
+}
+
 function buildDailyDemand(sku, days){
   const today = new Date(); today.setHours(0,0,0,0);
   const todayIso = isoDate(today);
@@ -772,47 +778,68 @@ function buildDailyDemand(sku, days){
   });
   dailyDemand[todayIso] += overdue;
 
-  // 2. For each Mon-Sun week intersecting the horizon: demand = MAX(forecast, sum of SOs in that week)
-  //    spread across working weekdays (excluding public holidays) of that week.
-  const fcByWeek = {}; const soByWeek = {};
+  // 2. Forecast handling:
+  //    WW + Coles forecast rows have order_date = the actual dispatch date. Place units on that
+  //    date (shifted to next workday if it falls on a weekend or PH).
+  //    Metcash forecast rows have only week_date (no order_date) — spread across workdays of that week.
+  const fcByDay = {}; // forecast-derived demand per day
+  const weekSpread = {}; // for Metcash, sum per Monday-week
+
   const allFc = [...DATA.forecasts.coles, ...DATA.forecasts.ww, ...DATA.forecasts.metcash];
   allFc.forEach(f => {
-    if(f.sku !== sku || !f.week_date) return;
-    const wd = new Date(f.week_date.slice(0,10)); wd.setHours(0,0,0,0);
-    const dow = wd.getDay();
-    const off = dow === 0 ? -6 : (1 - dow);
-    const monday = new Date(wd); monday.setDate(wd.getDate() + off);
-    const key = isoDate(monday);
-    fcByWeek[key] = (fcByWeek[key]||0) + (Number(f.units)||0);
-  });
-  DATA.orders.forEach(l => {
-    if(l.sku !== sku || !l.ship_date) return;
-    if(l.ship_date < todayIso) return; // overdue handled above
-    const sd = new Date(l.ship_date); sd.setHours(0,0,0,0);
-    const dow = sd.getDay();
-    const off = dow === 0 ? -6 : (1 - dow);
-    const monday = new Date(sd); monday.setDate(sd.getDate()+off);
-    const key = isoDate(monday);
-    soByWeek[key] = (soByWeek[key]||0) + (Number(l.units_ordered)||0);
+    if(f.sku !== sku) return;
+    const units = Number(f.units) || 0;
+    if(units === 0) return;
+    if(f.order_date){
+      // Place on order_date (shifted to next workday if PH/weekend)
+      const od = new Date(f.order_date.slice(0,10));
+      const targetDay = nextWorkday(od);
+      const k = isoDate(targetDay);
+      if(k in dailyDemand) fcByDay[k] = (fcByDay[k]||0) + units;
+    } else if(f.week_date){
+      // No order_date: spread across workdays of week
+      const wd = new Date(f.week_date.slice(0,10)); wd.setHours(0,0,0,0);
+      const dow = wd.getDay();
+      const off = dow === 0 ? -6 : (1 - dow);
+      const monday = new Date(wd); monday.setDate(wd.getDate()+off);
+      const wkKey = isoDate(monday);
+      weekSpread[wkKey] = (weekSpread[wkKey] || 0) + units;
+    }
   });
 
-  const allWeeks = new Set([...Object.keys(fcByWeek), ...Object.keys(soByWeek)]);
-  allWeeks.forEach(weekKey => {
-    const demand = Math.max(fcByWeek[weekKey]||0, soByWeek[weekKey]||0);
-    if(demand === 0) return;
-    const weekStart = new Date(weekKey); weekStart.setHours(0,0,0,0);
+  // Spread week-only forecasts across the workdays of the week
+  Object.keys(weekSpread).forEach(weekKey => {
+    const ws = new Date(weekKey); ws.setHours(0,0,0,0);
     const workdays = [];
     for(let off=0; off<7; off++){
-      const d = new Date(weekStart); d.setDate(weekStart.getDate()+off);
-      if(d.getDay() === 0 || d.getDay() === 6) continue;
+      const d = new Date(ws); d.setDate(ws.getDate()+off);
+      if(d.getDay()===0 || d.getDay()===6) continue;
       if(PUBLIC_HOLIDAYS.has(isoDate(d))) continue;
       workdays.push(d);
     }
-    if(workdays.length === 0) return;
     const inHorizon = workdays.filter(d => isoDate(d) in dailyDemand);
     if(inHorizon.length === 0) return;
-    const perDay = demand / workdays.length;
-    inHorizon.forEach(d => { dailyDemand[isoDate(d)] += perDay; });
+    const perDay = weekSpread[weekKey] / workdays.length;
+    inHorizon.forEach(d => { fcByDay[isoDate(d)] = (fcByDay[isoDate(d)]||0) + perDay; });
+  });
+
+  // 3. SOs by ship_date (forward only — overdue already lumped above)
+  const soByDay = {};
+  DATA.orders.forEach(l => {
+    if(l.sku !== sku || !l.ship_date) return;
+    if(l.ship_date < todayIso) return;
+    const k = l.ship_date.slice(0,10);
+    if(k in dailyDemand){
+      soByDay[k] = (soByDay[k]||0) + (Number(l.units_ordered)||0);
+    }
+  });
+
+  // 4. Per-day demand = MAX(SO that day, forecast-derived for that day).
+  //    SOs and forecast describe the same flow; take the higher to avoid double-count.
+  Object.keys(dailyDemand).forEach(dIso => {
+    const fc = fcByDay[dIso] || 0;
+    const so = soByDay[dIso] || 0;
+    dailyDemand[dIso] += Math.max(fc, so);
   });
 
   return dailyDemand;
@@ -914,15 +941,16 @@ function renderHeatmap(){
       const dIso = isoDate(d);
       const dem = dailyDemand[dIso] || 0;
       const prod = (dIso === todayIso) ? 0 : dailyCapacity(sku, d);
-      // Cell colour reflects start-of-day stock vs that day's demand
       let cls;
       if(dem === 0 && sod >= 0){ cls = 'grey'; }
       else if(sod + prod < dem){ cls = 'red'; }
       else if((sod + prod) < dem * 1.2){ cls = 'amber'; }
       else { cls = 'green'; }
       const we = (d.getDay()===0||d.getDay()===6) ? ' weekend' : '';
-      const tip = `${sku} ${fmtDate(d)}\nStart-of-day stock: ${fmt(sod)}\nThat day's demand: ${fmt(dem)}\nThat day's production: ${fmt(prod)}\nEnd-of-day stock: ${fmt(sod+prod-dem)}`;
-      html += `<td class="cell ${cls}${we}" title="${tip}">${fmt(sod)}</td>`;
+      const tip = `${sku} ${fmtDate(d)}\nStart-of-day stock: ${fmt(sod)}\nDemand: ${fmt(dem)}\nProduction: ${fmt(prod)}\nEnd-of-day stock: ${fmt(sod+prod-dem)}`;
+      // Two-line cell: top = SOD stock (big), bottom = demand (small, with arrow)
+      const demStr = dem > 0 ? `<div style="font-size:9px;font-weight:normal;opacity:.85;margin-top:2px">↓${fmt(dem)}</div>` : '';
+      html += `<td class="cell ${cls}${we}" title="${tip}"><div>${fmt(sod)}</div>${demStr}</td>`;
       sod = sod + prod - dem;
     });
     html += '</tr>';
