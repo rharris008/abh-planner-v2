@@ -209,6 +209,36 @@ const SKUS = ['10L Cask','5L Cask','2L Bottle','600ml 12pk','600ml 6pk'];
 const HORIZON_DAYS = 14;
 const PROJECTION_DAYS = 28;
 
+// Average daily production rate per SKU, per weekday.
+// Calculated from live NetSuite Build records W14-W17 (28 Mar - 24 Apr 2026), 20 weekdays.
+// These are real run rates, not theoretical maxes. They reflect current shed-move
+// constraints (e.g. 5L is throttled because Cask Line A is sharing power with B's removal).
+const DAILY_PROD_RATE = {
+  '10L Cask':   15429,  // (54624+70478+94164+89304)/20
+  '5L Cask':     1884,  // (12120+6360+13620+5580)/20  -- shed-move suppressed
+  '2L Bottle':   1670,  // (7936+7232+5248+12992)/20
+  '600ml 12pk':  2948,  // (10458+16884+16506+15120)/20
+  '600ml 6pk':   4120,  // (19908+10836+30744+20916)/20
+};
+
+// Theoretical max per primary line (units/day at full utilisation, used in capacity calendar)
+const LINE_THEORETICAL_MAX = {
+  'HMPS (10L Cask)':       {sku:'10L Cask',    units_per_day: 15360},  // 80 pal/shift × 96 UPP × 2 shifts
+  'Cask Line A (5L/10L)':  {sku:'5L Cask',     units_per_day: 6000},
+  'SM Bottle (2L)':        {sku:'2L Bottle',   units_per_day: 4000},
+  'EP New Line (600ml)':   {sku:'600ml mix',   units_per_day: 7000},
+};
+
+// Actual sales by SKU by week W14-W17 (from NS Report 733 via the W02-W17 weekly report).
+// Used for forecast accuracy in the absence of a snapshot table.
+const HISTORICAL_SALES_W14_W17 = {
+  '10L Cask':   {W14:74084, W15:74676, W16:74146, W17:93718},
+  '5L Cask':    {W14:12420, W15:6360,  W16:6480,  W17:5760},
+  '2L Bottle':  {W14:10112, W15:7616,  W16:5696,  W17:11136},
+  '600ml 12pk': {W14:13482, W15:14868, W16:10332, W17:18900},
+  '600ml 6pk':  {W14:14112, W15:10080, W16:16632, W17:27216},
+};
+
 async function sbGet(path){
   const r = await fetch(SB_URL + '/rest/v1/' + path, {
     headers:{apikey:SB_KEY, Authorization:'Bearer '+SB_KEY}
@@ -322,6 +352,30 @@ function classifyDay(stockEod, demandFromHere, daysFromNow){
   return 'green';
 }
 
+function daysOfCoverWithProduction(stockNow, dailyDemand, dailyProd, days){
+  // Walk forward, including production additions on weekdays. Days until stock <= 0.
+  let stock = stockNow;
+  let daysCount = 0;
+  for(const d of days){
+    if(stock <= 0) break;
+    const key = isoDate(d);
+    const dem = dailyDemand[key] || 0;
+    const prod = dailyProd[key] || 0;
+    stock = stock + prod - dem;
+    daysCount++;
+    if(stock <= 0) break;
+  }
+  if(stock > 0){
+    // Survives the horizon — extrapolate using net daily flow
+    const totalDemand = days.reduce((s,d) => s + (dailyDemand[isoDate(d)]||0), 0);
+    const totalProd = days.reduce((s,d) => s + (dailyProd[isoDate(d)]||0), 0);
+    const netDaily = (totalDemand - totalProd) / days.length;
+    if(netDaily <= 0) return days.length + 14; // production keeps up; show "comfortable"
+    return Math.round(stockNow / netDaily);
+  }
+  return daysCount;
+}
+
 function daysOfCover(stockNow, dailyDemand, days){
   // Days of cover today = walk days; subtract demand; report how many days until stock <= 0
   let stock = stockNow;
@@ -377,6 +431,19 @@ function getStockFor(sku){
   return row ? Number(row.units) : 0;
 }
 
+function dailyProductionFor(sku, days){
+  // Apply DAILY_PROD_RATE on weekdays, 0 on weekends. No production today (already today's stock baked in).
+  const rate = DAILY_PROD_RATE[sku] || 0;
+  const out = {};
+  const todayIso = isoDate(new Date());
+  days.forEach(d => {
+    const key = isoDate(d);
+    if(key === todayIso) { out[key] = 0; return; } // today is already in stockNow
+    out[key] = isWeekend(d) ? 0 : rate;
+  });
+  return out;
+}
+
 function render(){
   // Build per-SKU projections for the 14-day horizon
   const skuProjections = {};
@@ -389,9 +456,11 @@ function render(){
       dailyDemand[key] = (fc[key]||0) + (co[key]||0);
     });
     const stockNow = getStockFor(sku);
-    const projection = projectStock(stockNow, dailyDemand, DATA.days, {});
-    const cover = daysOfCover(stockNow, dailyDemand, DATA.days);
-    skuProjections[sku] = {dailyDemand, projection, stockNow, cover};
+    const dailyProd = dailyProductionFor(sku, DATA.days);
+    const projection = projectStock(stockNow, dailyDemand, DATA.days, dailyProd);
+    // Days of cover now considers production: stock + 14d production - 14d demand
+    const cover = daysOfCoverWithProduction(stockNow, dailyDemand, dailyProd, DATA.days);
+    skuProjections[sku] = {dailyDemand, dailyProd, projection, stockNow, cover};
   });
 
   renderTiles(skuProjections);
@@ -510,7 +579,8 @@ function drillInto(sku){
     dailyDemand[key] = (fc[key]||0) + (co[key]||0);
   });
   const stockNow = getStockFor(sku);
-  const projection = projectStock(stockNow, dailyDemand, DATA.projDays, {});
+  const dailyProd = dailyProductionFor(sku, DATA.projDays);
+  const projection = projectStock(stockNow, dailyDemand, DATA.projDays, dailyProd);
 
   // Stockout day
   const stockoutDay = projection.find(p => p.eod < 0);
@@ -634,18 +704,8 @@ function renderUnfulfillable(){
 
 // ============================================================
 // SECTION 3 — PRODUCTION CAPACITY CALENDAR
-// Theoretical line capacities (per CLAUDE.md and known config).
-// HMPS Dual = 80 pal/shift = ~7,680 units/shift @ 96 UPP. 2 shifts/day = 15,360 units/day.
-// Without a daily_production_schedule table populated yet, we can show capacity but
-// not "scheduled" — so the cells show theoretical max with a placeholder.
+// Run rate (4-week NetSuite Build avg) vs theoretical max per line.
 // ============================================================
-const LINE_CAPACITY = {
-  'HMPS (10L Cask)':       {sku:'10L Cask',    units_per_day: 15360, shifts:'Day+Arvo+Night max'},
-  'Cask Line A (5L/10L)':  {sku:'5L Cask',     units_per_day: 6000,  shifts:'Day+Arvo'},
-  'SM Bottle (2L)':        {sku:'2L Bottle',   units_per_day: 4000,  shifts:'Day+Arvo'},
-  'EP New Line (600ml)':   {sku:'600ml mix',   units_per_day: 7000,  shifts:'Day+Arvo'},
-};
-
 function renderCapacity(){
   const c = document.getElementById('capacity');
   let html = '<table class="capacity"><thead><tr><th class="line-col">Line / SKU</th>';
@@ -655,19 +715,34 @@ function renderCapacity(){
     html += `<th class="${cls}">${fmtDate(d)}</th>`;
   });
   html += '</tr></thead><tbody>';
-  Object.entries(LINE_CAPACITY).forEach(([line, cfg]) => {
-    html += `<tr><td class="line-name">${line}<br><small style="color:#666;font-weight:normal">${cfg.units_per_day.toLocaleString('en-AU')}/day max</small></td>`;
+  Object.entries(LINE_THEORETICAL_MAX).forEach(([line, cfg]) => {
+    const sku = cfg.sku;
+    const rate = sku === '600ml mix'
+      ? (DAILY_PROD_RATE['600ml 12pk'] + DAILY_PROD_RATE['600ml 6pk'])
+      : (DAILY_PROD_RATE[sku] || 0);
+    const max = cfg.units_per_day;
+    const utilPct = Math.round((rate/max) * 100);
+    html += `<tr><td class="line-name">${line}<br><small style="color:#666;font-weight:normal">Run rate ${rate.toLocaleString('en-AU')}/d · Max ${max.toLocaleString('en-AU')}/d · ${utilPct}%</small></td>`;
     DATA.days.forEach(d => {
       const we = isWeekend(d);
-      // Without a schedule table, mark weekday cells "ok" and weekends as idle
-      const cls = we ? 'idle weekend' : 'unknown';
-      const tip = we ? 'Weekend (no scheduled production)' : `Theoretical max ${cfg.units_per_day.toLocaleString('en-AU')}/day. No schedule populated yet.`;
-      html += `<td class="cap ${cls}" title="${tip}">${we ? '·' : '–'}</td>`;
+      let cls, content, tip;
+      if(we){
+        cls = 'idle weekend'; content = '·';
+        tip = 'Weekend (no production)';
+      } else {
+        // Run rate is the assumed planned production. Compare to max.
+        if(utilPct >= 90){ cls = 'full'; }
+        else if(utilPct >= 70){ cls = 'tight'; }
+        else { cls = 'ok'; }
+        content = rate.toLocaleString('en-AU');
+        tip = `${line} ${fmtDate(d)}\nPlanned: ${rate.toLocaleString('en-AU')}\nMax: ${max.toLocaleString('en-AU')}\nUtilisation: ${utilPct}%`;
+      }
+      html += `<td class="cap ${cls}" title="${tip}">${content}</td>`;
     });
     html += '</tr>';
   });
   html += '</tbody></table>';
-  html += '<div style="font-size:11px;color:#888;margin-top:8px"><b>Status:</b> theoretical capacities shown. Daily scheduled production is not yet populated in <code>daily_production_schedule</code>. Once Rob enters the weekly plan, cells will turn green/amber/red based on booked vs max.</div>';
+  html += '<div style="font-size:11px;color:#888;margin-top:8px"><b>Run rate</b> = average daily production from NetSuite Build records, last 4 weeks (W14-W17, 28 Mar - 24 Apr). <b>Max</b> = theoretical line capacity per CLAUDE.md. <b>Green</b> = comfortable headroom. <b>Amber</b> = 70-90% utilisation. <b>Red</b> = 90%+ utilisation, no buffer for breakdown.</div>';
   c.innerHTML = html;
 }
 
@@ -677,7 +752,8 @@ function renderCapacity(){
 // ============================================================
 function populateWhatIfControls(){
   const lineSel = document.getElementById('wifLine');
-  Object.keys(LINE_CAPACITY).forEach(l => {
+  if(lineSel.options.length > 0) return; // already populated
+  Object.keys(LINE_THEORETICAL_MAX).forEach(l => {
     const o = document.createElement('option'); o.value = l; o.textContent = l;
     lineSel.appendChild(o);
   });
@@ -704,19 +780,14 @@ function populateWhatIfControls(){
 }
 
 function runWhatIf(line, daysDown, startIso){
-  // Affected SKU
-  const affectedSku = LINE_CAPACITY[line] && LINE_CAPACITY[line].sku;
+  const affectedSku = LINE_THEORETICAL_MAX[line] && LINE_THEORETICAL_MAX[line].sku;
   if(!affectedSku){
     document.getElementById('wifResult').innerHTML = '<div class="section-empty">No SKU mapping for that line.</div>';
     return;
   }
-  // Map "10L Cask" / "5L Cask" / "2L Bottle" / "600ml mix" to one of our 5 SKUs
-  // For 600ml mix we'll affect both 12pk and 6pk equally
   const affected = (affectedSku === '600ml mix') ? ['600ml 12pk','600ml 6pk'] : [affectedSku];
 
-  // Compute baseline cover and what-if cover for each SKU
-  const before = {};
-  const after = {};
+  const before = {}; const after = {};
   SKUS.forEach(sku => {
     const dailyDemand = {};
     const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days);
@@ -726,24 +797,15 @@ function runWhatIf(line, daysDown, startIso){
       dailyDemand[k] = (fc[k]||0) + (co[k]||0);
     });
     const stockNow = getStockFor(sku);
-    before[sku] = daysOfCover(stockNow, dailyDemand, DATA.days);
-    after[sku] = before[sku]; // default unchanged
+    const dailyProd = dailyProductionFor(sku, DATA.days);
+    before[sku] = daysOfCoverWithProduction(stockNow, dailyDemand, dailyProd, DATA.days);
+    after[sku] = before[sku];
   });
 
-  // For affected SKUs, compute what-if where the line is unable to produce for the down period.
-  // Without a schedule table, we approximate: assume baseline production rate would have been
-  // the line's units_per_day for the affected SKU on each weekday in the down window.
-  // Lost production = capacity * weekdays_in_down_window
-  const cap = LINE_CAPACITY[line].units_per_day;
+  // Lost production = run rate × weekdays in down window (use ACTUAL run rate, not theoretical max)
   const startDate = new Date(startIso);
-  let lostProd = 0;
-  for(let i=0; i<daysDown; i++){
-    const d = new Date(startDate); d.setDate(startDate.getDate()+i);
-    if(d.getDay() !== 0 && d.getDay() !== 6) lostProd += cap;
-  }
-  // Distribute lost production across affected SKUs (single-SKU = 100%, 600ml = 50/50)
-  const perSkuLoss = lostProd / affected.length;
   affected.forEach(sku => {
+    const rate = DAILY_PROD_RATE[sku] || 0;
     const dailyDemand = {};
     const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days);
     const co = expandCommittedOrders(DATA.orders, sku, DATA.days);
@@ -751,12 +813,26 @@ function runWhatIf(line, daysDown, startIso){
       const k = isoDate(d);
       dailyDemand[k] = (fc[k]||0) + (co[k]||0);
     });
-    // Reduce stock by perSkuLoss as a proxy for missed production
-    const stockReduced = getStockFor(sku) - perSkuLoss;
-    after[sku] = daysOfCover(stockReduced, dailyDemand, DATA.days);
+    // Build a what-if dailyProd that zeroes out the down window
+    const wifProd = dailyProductionFor(sku, DATA.days);
+    for(let i=0; i<daysDown; i++){
+      const d = new Date(startDate); d.setDate(startDate.getDate()+i);
+      const k = isoDate(d);
+      if(k in wifProd && !isWeekend(d)) wifProd[k] = 0;
+    }
+    after[sku] = daysOfCoverWithProduction(getStockFor(sku), dailyDemand, wifProd, DATA.days);
   });
 
-  let html = `<div style="font-size:12px;color:#444;margin-bottom:8px"><b>Scenario:</b> ${line} down for ${daysDown} day${daysDown>1?'s':''} from ${fmtDate(startDate)}. Lost production: ${fmtNum(lostProd)} units.</div>`;
+  // Lost production summary
+  let lostProd = 0;
+  for(let i=0; i<daysDown; i++){
+    const d = new Date(startDate); d.setDate(startDate.getDate()+i);
+    if(!isWeekend(d)){
+      affected.forEach(sku => { lostProd += (DAILY_PROD_RATE[sku] || 0); });
+    }
+  }
+
+  let html = `<div style="font-size:12px;color:#444;margin-bottom:8px"><b>Scenario:</b> ${line} down for ${daysDown} day${daysDown>1?'s':''} from ${fmtDate(startDate)}. Lost production: ${fmtNum(lostProd)} units (using current run rate).</div>`;
   html += '<div class="whatif-comparison">';
   SKUS.forEach(sku => {
     const b = before[sku], a = after[sku];
@@ -777,25 +853,47 @@ function runWhatIf(line, daysDown, startIso){
 // Future v2 will use forecast_actuals_log once snapshots have run for 4-8 weeks.
 // ============================================================
 function renderForecast(){
-  // Sum forecasts for next 4 weeks per SKU and compare to current stock
+  // Compute forecast accuracy: forecast vs actual sales for past weeks W14-W17.
+  // Forecast = sum of all retailer forecasts for that week_date (in the live forecast tables).
+  // Actual = HISTORICAL_SALES_W14_W17 (from NS Report 733).
   const c = document.getElementById('forecast');
-  let html = '<table class="forecast"><thead><tr><th>SKU</th><th>4-week forecast</th><th>Current stock</th><th>Stock as % of forecast</th><th>Status</th></tr></thead><tbody>';
+  const w14_17_starts = {W14: '2026-03-28', W15: '2026-04-04', W16: '2026-04-11', W17: '2026-04-18'};
+
+  let html = '<table class="forecast"><thead><tr><th>SKU</th><th>Week</th><th>Forecast (units)</th><th>Actual sales</th><th>Error</th><th>Error %</th></tr></thead><tbody>';
+  const skuErrors = {};
   SKUS.forEach(sku => {
-    let fc4 = 0;
-    const today = new Date(); today.setHours(0,0,0,0);
-    const horizonEnd = new Date(today); horizonEnd.setDate(today.getDate() + 28);
-    DATA.forecasts.filter(f => f.sku === sku).forEach(f => {
-      const wd = new Date(f.week_date); wd.setHours(0,0,0,0);
-      if(wd >= today && wd < horizonEnd) fc4 += Number(f.units) || 0;
+    skuErrors[sku] = [];
+    Object.entries(w14_17_starts).forEach(([wk, isoStart]) => {
+      const target = new Date(isoStart);
+      // Sum forecasts whose week_date matches this Saturday-start week (Sat-Fri convention)
+      let fc = 0;
+      DATA.forecasts.filter(f => f.sku === sku).forEach(f => {
+        const wd = new Date(f.week_date); wd.setHours(0,0,0,0);
+        // Match if forecast week_date falls within target week (target..target+6)
+        const targetEnd = new Date(target); targetEnd.setDate(target.getDate()+6);
+        if(wd >= target && wd <= targetEnd) fc += Number(f.units) || 0;
+      });
+      const actual = HISTORICAL_SALES_W14_W17[sku][wk] || 0;
+      const err = fc - actual;
+      const errPct = actual > 0 ? Math.abs(err) / actual * 100 : 0;
+      const cls = errPct < 10 ? 'err-low' : (errPct < 25 ? 'err-mid' : 'err-high');
+      html += `<tr><td><b>${sku}</b></td><td>${wk}</td><td class="right">${fmtNum(fc)}</td><td class="right">${fmtNum(actual)}</td><td class="right ${cls}">${err>=0?'+':''}${fmtNum(err)}</td><td class="right ${cls}">${errPct.toFixed(1)}%</td></tr>`;
+      if(actual > 0) skuErrors[sku].push(errPct);
     });
-    const stock = getStockFor(sku);
-    const pct = fc4 > 0 ? Math.round((stock/fc4)*100) : 0;
-    const cls = pct < 25 ? 'err-high' : (pct < 50 ? 'err-mid' : 'err-low');
-    const status = pct < 25 ? 'Tight — production critical' : (pct < 50 ? 'OK with production' : 'Comfortable');
-    html += `<tr><td><b>${sku}</b></td><td class="right">${fmtNum(fc4)}</td><td class="right">${fmtNum(stock)}</td><td class="right ${cls}">${pct}%</td><td class="${cls}">${status}</td></tr>`;
   });
   html += '</tbody></table>';
-  html += '<div style="font-size:11px;color:#888;margin-top:8px"><b>Note:</b> v1 shows current-stock vs 4-week forecast as a coverage proxy. Forecast accuracy (last-8-weeks forecast vs actual sales) needs <code>forecast_actuals_log</code> populated by a weekly snapshot job; once 4-8 weeks of history exist, this will show forecast error % per SKU and a trust score that drives the AMBER threshold dynamically.</div>';
+
+  // Per-SKU average error
+  html += '<div style="margin-top:12px;font-size:12px"><b>Average forecast error per SKU (W14-W17, 4 weeks):</b><br>';
+  SKUS.forEach(sku => {
+    const errs = skuErrors[sku];
+    const avg = errs.length ? errs.reduce((a,b)=>a+b,0)/errs.length : 0;
+    const cls = avg < 10 ? 'err-low' : (avg < 25 ? 'err-mid' : 'err-high');
+    const trust = avg < 10 ? 'High trust' : (avg < 25 ? 'Moderate' : 'Low trust');
+    html += `<span style="display:inline-block;margin-right:14px"><b>${sku}:</b> <span class="${cls}">${avg.toFixed(1)}% (${trust})</span></span>`;
+  });
+  html += '</div>';
+  html += '<div style="font-size:11px;color:#888;margin-top:8px"><b>Method:</b> for each past week, the forecast value (from the live retailer forecast tables, indexed by week_date) is compared to actual NetSuite sales. Error % drives the trust score per SKU. Low trust = bigger buffer needed against forecast surprise.</div>';
   c.innerHTML = html;
 }
 
