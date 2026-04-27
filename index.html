@@ -33,17 +33,32 @@
   .toolbar button{padding:6px 12px;font-family:Arial;font-size:12px;background:var(--blue);color:#fff;border:none;border-radius:3px;cursor:pointer}
   .toolbar button:hover{opacity:.9}
 
-  table{border-collapse:collapse;width:100%;font-size:12px}
-  th{background:var(--navy);color:#fff;font-weight:bold;font-size:11px;text-align:left;padding:8px 10px;text-transform:uppercase;letter-spacing:.4px;position:sticky;top:0}
-  td{padding:8px 10px;border-bottom:1px solid #EEE;vertical-align:top}
-  tr:hover td{background:#FFFCF0}
-  td.right{text-align:right}
+  /* Base table style — used for every non-matrix table on the page */
+  table{border-collapse:collapse;width:100%;font-size:12px;background:#fff}
+  thead th{background:var(--navy);color:#fff;font-weight:bold;font-size:11px;text-align:left;padding:9px 12px;text-transform:uppercase;letter-spacing:.4px;border:none}
+  tbody td{padding:9px 12px;border-bottom:1px solid #EEE;vertical-align:middle;line-height:1.4}
+  tbody tr:nth-child(even) td{background:#FAFBFC}
+  tbody tr:hover td{background:#FFF8E1}
+  tbody tr:last-child td{border-bottom:none}
+  tfoot td{padding:10px 12px;background:var(--ltgrey);font-weight:bold;color:var(--navy);border-top:2px solid var(--mdgrey)}
+  th.right,td.right{text-align:right}
   td.sku{font-weight:bold;color:var(--navy);white-space:nowrap}
   td.so{font-family:Menlo,monospace;font-size:11px;color:var(--navy);font-weight:bold;white-space:nowrap}
   td.late{font-weight:bold;color:var(--red);text-align:right;white-space:nowrap}
   td.short{font-weight:bold;color:var(--red);text-align:right;white-space:nowrap}
   td.surplus{font-weight:bold;color:var(--green);text-align:right;white-space:nowrap}
   td.reason{color:#666;font-size:11px}
+
+  /* Section sub-header (used inside reconciliation panel for grouped tables) */
+  .panel-subhead{padding:10px 14px;background:var(--ltgrey);color:var(--navy);font-size:12px;font-weight:bold;text-transform:none;letter-spacing:0;border-top:1px solid #DDD;border-bottom:1px solid #DDD}
+  .panel-subhead:first-child{border-top:none}
+  .panel-subhead a{color:var(--blue);text-decoration:none;font-weight:normal;margin-left:8px;font-size:11px}
+  .panel-subhead a:hover{text-decoration:underline}
+
+  /* Calc panel inner tables share the base style but with smaller padding */
+  table.calc{font-size:11px}
+  table.calc thead th{padding:7px 10px;font-size:10px}
+  table.calc tbody td{padding:6px 10px}
   .badge-red{background:var(--red);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
   .badge-amber{background:var(--amber);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
   .badge-green{background:var(--green);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
@@ -955,7 +970,7 @@ function renderCalc(){
         <b>Production assumption:</b> ${fmt(rateWk)} units/weekday (${(rateWk/(UPP[sku]||1)).toFixed(0)} pal/day) · ${fmt(rateSat)} units/Saturday · 0 Sun/PH. ${inOutage ? '<br>' + inOutage : ''}<br>
         <b>14-day totals:</b> projected production ${fmt(totalProd)} · projected demand ${fmt(totalDemand)} · ending stock ${fmt(rows[rows.length-1].eod)}
       </div>`;
-    html += '<table style="margin-top:8px;font-size:11px"><thead><tr><th>Day</th><th class="right">SOD stock</th><th class="right">+ Production</th><th class="right">- Demand</th><th class="right">EOD stock</th></tr></thead><tbody>';
+    html += '<table class="calc" style="margin-top:10px"><thead><tr><th>Day</th><th class="right">SOD stock</th><th class="right">+ Production</th><th class="right">− Demand</th><th class="right">EOD stock</th></tr></thead><tbody>';
     rows.forEach(r => {
       const we = (r.date.getDay()===0||r.date.getDay()===6) ? 'background:#F8F8F8;color:#888' : '';
       const isToday = (isoDate(r.date) === todayIso);
@@ -1010,22 +1025,20 @@ function renderRecon(){
   `;
 
   // Stock recon
-  html += '<table><thead><tr><th colspan="5" style="background:var(--ltgrey);color:var(--navy);font-size:12px;padding:8px 10px;text-transform:none;letter-spacing:0">Stock on hand &mdash; <a href="' + NS_REPORT_STOCK + '" target="_blank" style="color:var(--blue)">View NS Report 752</a></th></tr>';
-  html += '<tr><th>SKU</th><th class="right">Units</th><th class="right">Pallets</th><th>Sync date</th><th></th></tr></thead><tbody>';
+  html += `<div class="panel-subhead">Stock on hand <a href="${NS_REPORT_STOCK}" target="_blank">View NS Report 752</a></div>`;
+  html += '<table><thead><tr><th>SKU</th><th class="right">Units</th><th class="right">Pallets</th><th>Sync date</th></tr></thead><tbody>';
   stockRows.forEach(r => {
-    html += `<tr><td class="sku">${r.sku}</td><td class="right">${fmt(r.units)}</td><td class="right">${(r.pallets||0).toFixed(1)}</td><td>${r.when ? new Date(r.when).toLocaleDateString('en-AU') : '—'}</td><td></td></tr>`;
+    html += `<tr><td class="sku">${r.sku}</td><td class="right">${fmt(r.units)}</td><td class="right">${(r.pallets||0).toFixed(1)}</td><td>${r.when ? new Date(r.when).toLocaleDateString('en-AU') : '—'}</td></tr>`;
   });
-  html += `<tr style="background:var(--ltgrey);font-weight:bold"><td>TOTAL</td><td class="right">${fmt(stockTotalUnits)}</td><td class="right">${stockTotalPallets.toFixed(1)}</td><td colspan="2"></td></tr>`;
-  html += '</tbody></table>';
+  html += `</tbody><tfoot><tr><td>TOTAL</td><td class="right">${fmt(stockTotalUnits)}</td><td class="right">${stockTotalPallets.toFixed(1)}</td><td></td></tr></tfoot></table>`;
 
   // SO recon
-  html += '<table style="margin-top:14px"><thead><tr><th colspan="4" style="background:var(--ltgrey);color:var(--navy);font-size:12px;padding:8px 10px;text-transform:none;letter-spacing:0">Open Sales Orders (Pending Fulfillment, ABH subsidiary 2) &mdash; <a href="' + NS_SAVED_SEARCH_OPEN_SOS + '" target="_blank" style="color:var(--blue)">View NS saved search 6137</a></th></tr>';
-  html += '<tr><th>SKU</th><th class="right">SO line count</th><th class="right">Units</th><th></th></tr></thead><tbody>';
+  html += `<div class="panel-subhead">Open Sales Orders (Pending Fulfillment, ABH subsidiary 2) <a href="${NS_SAVED_SEARCH_OPEN_SOS}" target="_blank">View NS saved search 6137</a></div>`;
+  html += '<table><thead><tr><th>SKU</th><th class="right">SO line count</th><th class="right">Units</th></tr></thead><tbody>';
   SKUS.forEach(s => {
-    html += `<tr><td class="sku">${s}</td><td class="right">${soBySku[s].lines}</td><td class="right">${fmt(soBySku[s].units)}</td><td></td></tr>`;
+    html += `<tr><td class="sku">${s}</td><td class="right">${soBySku[s].lines}</td><td class="right">${fmt(soBySku[s].units)}</td></tr>`;
   });
-  html += `<tr style="background:var(--ltgrey);font-weight:bold"><td>TOTAL</td><td class="right">${soTotalLines}</td><td class="right">${fmt(soTotalUnits)}</td><td></td></tr>`;
-  html += '</tbody></table>';
+  html += `</tbody><tfoot><tr><td>TOTAL</td><td class="right">${soTotalLines}</td><td class="right">${fmt(soTotalUnits)}</td></tr></tfoot></table>`;
 
   // Forecast recon
   const today = new Date(); today.setHours(0,0,0,0);
