@@ -63,6 +63,15 @@
   .badge-amber{background:var(--amber);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
   .badge-green{background:var(--green);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
 
+  /* Filter bar (audit tables) */
+  .filter-bar{display:flex;gap:8px;flex-wrap:wrap;padding:10px 14px;background:#F5F8FA;border-bottom:1px solid #DDE3E8;font-size:12px;align-items:center}
+  .filter-bar label{display:inline-flex;align-items:center;gap:5px;font-weight:bold;color:var(--navy)}
+  .filter-bar select,.filter-bar input{padding:5px 8px;font-family:Arial;font-size:12px;border:1px solid var(--mdgrey);border-radius:3px;background:#fff;min-width:120px}
+  .filter-bar input.search{min-width:200px}
+  .filter-bar .clear{background:var(--mdgrey);color:var(--dktext);border:none;padding:5px 12px;border-radius:3px;cursor:pointer;font-size:11px}
+  .filter-bar .clear:hover{background:var(--blue);color:#fff}
+  .filter-summary{padding:6px 14px;background:#FFF;font-size:11px;color:#666;border-bottom:1px solid #EEE}
+
   /* SKU snapshot row */
   .snap-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:18px}
   .snap{background:#fff;border-left:5px solid var(--green);padding:12px 14px;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.08)}
@@ -216,18 +225,13 @@
     <div class="h2-sub">Every Pureau SKU stock row in Supabase. Click to open Report 752 in NS.</div>
     <div class="panel" id="auditStockPanel"></div>
 
-    <h2>4. Open Sales Order lines from NetSuite (saved search 6137)</h2>
-    <div class="h2-sub">Every line on every open Pureau Pending Fulfillment SO, ABH subsidiary 2. Sortable. Click any SO# to open in NS. Sum at the bottom.</div>
+    <h2>4. Open Sales Order lines from NetSuite (saved search 6137) — filterable</h2>
+    <div class="h2-sub">Every Pending Fulfillment SO line for ABH subsidiary 2, Pureau items only. Filter by SKU, customer, ship-date range, or free-text. Each row links back to NetSuite for direct cross-check.</div>
     <div class="panel" id="auditSOPanel"></div>
 
-    <h2>5. Woolworths forecast (every line)</h2>
-    <div class="panel" id="auditWWPanel"></div>
-
-    <h2>6. Coles forecast (every line)</h2>
-    <div class="panel" id="auditColesPanel"></div>
-
-    <h2>7. Metcash forecast (every line — pallets converted to units via SKU UPP)</h2>
-    <div class="panel" id="auditMetcashPanel"></div>
+    <h2>5. Retailer forecasts, every line — filterable</h2>
+    <div class="h2-sub">All WW, Coles, Metcash forecast rows in one table. Use the filters to narrow by retailer, SKU, week, month, or free-text. Counts and totals update as you filter. Each row mirrors the source spreadsheet for line-by-line audit.</div>
+    <div class="panel" id="auditFCPanel"></div>
 
     <h2>8. Day-by-day calculation per SKU</h2>
     <div class="h2-sub">SOD stock → +Production → −Shipments → EOD stock. The entire heatmap derives from these rows.</div>
@@ -1164,50 +1168,205 @@ function renderAuditStock(){
   document.getElementById('auditStockPanel').innerHTML = html;
 }
 
+// State for the filterable tables (preserved across re-renders within a session)
+const AUDIT_STATE = {
+  so: {sku:'', custKey:'', from:'', to:'', q:''},
+  fc: {retailer:'', sku:'', week:'', month:'', q:''},
+};
+
 function renderAuditSO(){
-  const lines = [...DATA.orders].sort((a,b) => (a.ship_date||'').localeCompare(b.ship_date||'') || (a.doc_num||'').localeCompare(b.doc_num||''));
-  let html = `<div class="panel-subhead">Open SO lines (subsidiary 2, status Pending Fulfillment, Pureau items only) <a href="${NS_SAVED_SEARCH_OPEN_SOS}" target="_blank">View NS saved search 6137</a></div>`;
-  if(lines.length === 0){ html += '<div class="panel-empty">No open SO lines.</div>'; document.getElementById('auditSOPanel').innerHTML = html; return; }
-  html += '<table><thead><tr><th>Ship date</th><th>SO #</th><th>Customer</th><th>SKU</th><th class="right">Units</th><th>Status</th></tr></thead><tbody>';
-  let totUnits = 0;
-  lines.forEach(l => {
-    const cust = (l.customer||'').split(':').pop().trim().slice(0, 70);
-    totUnits += Number(l.units_ordered)||0;
-    html += `<tr>
-      <td>${l.ship_date || '—'}</td>
-      <td class="so"><a href="${NS_TRAN_SEARCH(l.doc_num)}" target="_blank" style="color:var(--blue);text-decoration:none">${l.doc_num||'—'}</a></td>
-      <td>${cust}</td>
-      <td class="sku">${l.sku}</td>
-      <td class="right">${fmt(l.units_ordered)}</td>
-      <td>${l.status || '—'}</td>
-    </tr>`;
-  });
-  html += `</tbody><tfoot><tr><td colspan="4">TOTAL ${lines.length} lines</td><td class="right">${fmt(totUnits)}</td><td></td></tr></tfoot></table>`;
+  const all = DATA.orders;
+  const skus = SKUS;
+  // Distinct customer keys (from priority list + everyone seen)
+  const custSet = new Set();
+  all.forEach(l => custSet.add(customerKey(l.customer||'')));
+  const customers = [...custSet].sort();
+
+  function applyFilters(){
+    const f = AUDIT_STATE.so;
+    return all.filter(l => {
+      if(f.sku && l.sku !== f.sku) return false;
+      if(f.custKey && customerKey(l.customer||'') !== f.custKey) return false;
+      if(f.from && (l.ship_date||'') < f.from) return false;
+      if(f.to && (l.ship_date||'') > f.to) return false;
+      if(f.q){
+        const hay = ((l.customer||'') + ' ' + (l.doc_num||'') + ' ' + (l.sku||'') + ' ' + (l.ship_date||'')).toLowerCase();
+        if(!hay.includes(f.q.toLowerCase())) return false;
+      }
+      return true;
+    });
+  }
+
+  function paint(){
+    const lines = applyFilters().sort((a,b) => (a.ship_date||'').localeCompare(b.ship_date||'') || (a.doc_num||'').localeCompare(b.doc_num||''));
+    let body = '';
+    let totUnits = 0;
+    lines.forEach(l => {
+      const cust = (l.customer||'').split(':').pop().trim().slice(0, 70);
+      totUnits += Number(l.units_ordered)||0;
+      body += `<tr>
+        <td>${l.ship_date || '—'}</td>
+        <td class="so"><a href="${NS_TRAN_SEARCH(l.doc_num)}" target="_blank" style="color:var(--blue);text-decoration:none">${l.doc_num||'—'}</a></td>
+        <td>${cust}</td>
+        <td class="sku">${l.sku}</td>
+        <td class="right">${fmt(l.units_ordered)}</td>
+        <td>${l.status || '—'}</td>
+      </tr>`;
+    });
+    document.getElementById('auditSOTbody').innerHTML = body || '<tr><td colspan="6" style="text-align:center;color:#888;padding:18px">No SO lines match the filter.</td></tr>';
+    document.getElementById('auditSOTotalLines').textContent = `${lines.length} of ${all.length} lines`;
+    document.getElementById('auditSOTotalUnits').textContent = fmt(totUnits);
+  }
+
+  let html = `<div class="panel-subhead">Open SO lines (subsidiary 2, Pending Fulfillment, Pureau items) <a href="${NS_SAVED_SEARCH_OPEN_SOS}" target="_blank">View NS saved search 6137</a></div>`;
+  html += `<div class="filter-bar">
+    <label>SKU <select id="soFilSku"><option value="">All</option>${skus.map(s=>`<option value="${s}">${s}</option>`).join('')}</select></label>
+    <label>Customer <select id="soFilCust"><option value="">All</option>${customers.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></label>
+    <label>Ship from <input type="date" id="soFilFrom"></label>
+    <label>to <input type="date" id="soFilTo"></label>
+    <label>Search <input type="text" class="search" id="soFilQ" placeholder="SO #, customer, anything…"></label>
+    <button class="clear" id="soFilClear">Clear</button>
+  </div>`;
+  html += `<table>
+    <thead><tr><th>Ship date</th><th>SO #</th><th>Customer</th><th>SKU</th><th class="right">Units</th><th>Status</th></tr></thead>
+    <tbody id="auditSOTbody"></tbody>
+    <tfoot><tr><td colspan="4"><span id="auditSOTotalLines"></span></td><td class="right" id="auditSOTotalUnits"></td><td></td></tr></tfoot>
+  </table>`;
   document.getElementById('auditSOPanel').innerHTML = html;
+
+  // Wire filter inputs
+  const skuEl = document.getElementById('soFilSku');
+  const custEl = document.getElementById('soFilCust');
+  const fromEl = document.getElementById('soFilFrom');
+  const toEl = document.getElementById('soFilTo');
+  const qEl = document.getElementById('soFilQ');
+  skuEl.value = AUDIT_STATE.so.sku;
+  custEl.value = AUDIT_STATE.so.custKey;
+  fromEl.value = AUDIT_STATE.so.from;
+  toEl.value = AUDIT_STATE.so.to;
+  qEl.value = AUDIT_STATE.so.q;
+  function onChange(){
+    AUDIT_STATE.so = {sku: skuEl.value, custKey: custEl.value, from: fromEl.value, to: toEl.value, q: qEl.value};
+    paint();
+  }
+  [skuEl, custEl, fromEl, toEl].forEach(el => el.addEventListener('change', onChange));
+  qEl.addEventListener('input', onChange);
+  document.getElementById('soFilClear').addEventListener('click', () => {
+    AUDIT_STATE.so = {sku:'', custKey:'', from:'', to:'', q:''};
+    skuEl.value = ''; custEl.value = ''; fromEl.value = ''; toEl.value = ''; qEl.value = '';
+    paint();
+  });
+  paint();
 }
 
 function renderAuditForecasts(){
-  function buildTable(rows, hasOrderDate, hasDelivery){
-    if(rows.length === 0) return '<div class="panel-empty">No forecast rows.</div>';
-    const sorted = [...rows].sort((a,b) => (a.week_date||'').localeCompare(b.week_date||'') || (a.sku||'').localeCompare(b.sku||''));
-    let h = '<table><thead><tr><th>Week date</th>';
-    if(hasOrderDate) h += '<th>Order date (dispatch)</th>';
-    if(hasDelivery) h += '<th>Delivery date</th>';
-    h += '<th>SKU</th><th class="right">Units</th><th class="right">Pallets</th><th>Last updated</th></tr></thead><tbody>';
-    let totU = 0, totP = 0;
-    sorted.forEach(r => {
-      totU += Number(r.units)||0; totP += Number(r.pallets)||0;
-      h += '<tr><td>' + (r.week_date||'—') + '</td>';
-      if(hasOrderDate) h += '<td>' + (r.order_date||'—') + '</td>';
-      if(hasDelivery) h += '<td>' + (r.delivery_date||'—') + '</td>';
-      h += `<td class="sku">${r.sku}</td><td class="right">${fmt(r.units)}${r._units_derived ? ' <small style="color:#999">(from pallets)</small>' : ''}</td><td class="right">${(Number(r.pallets)||0).toFixed(1)}</td><td>${r.updated_at ? new Date(r.updated_at).toLocaleDateString('en-AU') : '—'}</td></tr>`;
+  // Combine all forecasts, tag _src already set on load
+  const all = [
+    ...DATA.forecasts.ww.map(r => ({...r, retailer: 'Woolworths'})),
+    ...DATA.forecasts.coles.map(r => ({...r, retailer: 'Coles'})),
+    ...DATA.forecasts.metcash.map(r => ({...r, retailer: 'Metcash'})),
+  ];
+
+  // Distinct months for filter (YYYY-MM from week_date)
+  const monthSet = new Set();
+  const weekSet = new Set();
+  all.forEach(r => {
+    if(r.week_date){
+      weekSet.add(r.week_date.slice(0,10));
+      monthSet.add(r.week_date.slice(0,7));
+    }
+  });
+  const months = [...monthSet].sort();
+  const weeks = [...weekSet].sort();
+
+  function applyFilters(){
+    const f = AUDIT_STATE.fc;
+    return all.filter(r => {
+      if(f.retailer && r.retailer !== f.retailer) return false;
+      if(f.sku && r.sku !== f.sku) return false;
+      if(f.week && (r.week_date||'').slice(0,10) !== f.week) return false;
+      if(f.month && (r.week_date||'').slice(0,7) !== f.month) return false;
+      if(f.q){
+        const hay = ((r.retailer||'') + ' ' + (r.sku||'') + ' ' + (r.week_date||'') + ' ' + (r.order_date||'') + ' ' + (r.delivery_date||'')).toLowerCase();
+        if(!hay.includes(f.q.toLowerCase())) return false;
+      }
+      return true;
     });
-    h += `</tbody><tfoot><tr><td colspan="${hasOrderDate?(hasDelivery?4:3):2}">TOTAL ${sorted.length} rows</td><td class="right">${fmt(totU)}</td><td class="right">${totP.toFixed(1)}</td><td></td></tr></tfoot></table>`;
-    return h;
   }
-  document.getElementById('auditWWPanel').innerHTML = buildTable(DATA.forecasts.ww, true, true);
-  document.getElementById('auditColesPanel').innerHTML = buildTable(DATA.forecasts.coles, true, false);
-  document.getElementById('auditMetcashPanel').innerHTML = buildTable(DATA.forecasts.metcash, false, false);
+
+  function paint(){
+    const rows = applyFilters().sort((a,b) =>
+      (a.week_date||'').localeCompare(b.week_date||'') ||
+      (a.retailer||'').localeCompare(b.retailer||'') ||
+      (a.sku||'').localeCompare(b.sku||'')
+    );
+    let body = '';
+    let totU = 0, totP = 0;
+    rows.forEach(r => {
+      totU += Number(r.units)||0; totP += Number(r.pallets)||0;
+      body += `<tr>
+        <td><b>${r.retailer}</b></td>
+        <td>${r.week_date||'—'}</td>
+        <td>${r.order_date||'—'}</td>
+        <td>${r.delivery_date||'—'}</td>
+        <td class="sku">${r.sku}</td>
+        <td class="right">${fmt(r.units)}${r._units_derived?' <small style="color:#999">(from pallets)</small>':''}</td>
+        <td class="right">${(Number(r.pallets)||0).toFixed(1)}</td>
+        <td>${r.updated_at ? new Date(r.updated_at).toLocaleDateString('en-AU') : '—'}</td>
+      </tr>`;
+    });
+    document.getElementById('auditFCTbody').innerHTML = body || '<tr><td colspan="8" style="text-align:center;color:#888;padding:18px">No forecast rows match the filter.</td></tr>';
+    document.getElementById('auditFCTotalRows').textContent = `${rows.length} of ${all.length} rows`;
+    document.getElementById('auditFCTotalU').textContent = fmt(totU);
+    document.getElementById('auditFCTotalP').textContent = totP.toFixed(1);
+  }
+
+  const skuOpts = SKUS.map(s=>`<option value="${s}">${s}</option>`).join('');
+  const monthOpts = months.map(m => {
+    const dt = new Date(m + '-01');
+    const lbl = dt.toLocaleDateString('en-AU', {month:'short', year:'numeric'});
+    return `<option value="${m}">${lbl}</option>`;
+  }).join('');
+  const weekOpts = weeks.map(w => `<option value="${w}">${w}</option>`).join('');
+
+  let html = `<div class="filter-bar">
+    <label>Retailer <select id="fcFilRet"><option value="">All</option><option value="Woolworths">Woolworths</option><option value="Coles">Coles</option><option value="Metcash">Metcash</option></select></label>
+    <label>SKU <select id="fcFilSku"><option value="">All</option>${skuOpts}</select></label>
+    <label>Week <select id="fcFilWeek"><option value="">All</option>${weekOpts}</select></label>
+    <label>Month <select id="fcFilMonth"><option value="">All</option>${monthOpts}</select></label>
+    <label>Search <input type="text" class="search" id="fcFilQ" placeholder="anything…"></label>
+    <button class="clear" id="fcFilClear">Clear</button>
+  </div>`;
+  html += `<table>
+    <thead><tr><th>Retailer</th><th>Week date</th><th>Order date</th><th>Delivery date</th><th>SKU</th><th class="right">Units</th><th class="right">Pallets</th><th>Last updated</th></tr></thead>
+    <tbody id="auditFCTbody"></tbody>
+    <tfoot><tr><td colspan="5"><span id="auditFCTotalRows"></span></td><td class="right" id="auditFCTotalU"></td><td class="right" id="auditFCTotalP"></td><td></td></tr></tfoot>
+  </table>`;
+  document.getElementById('auditFCPanel').innerHTML = html;
+
+  // Wire
+  const retEl = document.getElementById('fcFilRet');
+  const skuEl = document.getElementById('fcFilSku');
+  const weekEl = document.getElementById('fcFilWeek');
+  const monthEl = document.getElementById('fcFilMonth');
+  const qEl = document.getElementById('fcFilQ');
+  retEl.value = AUDIT_STATE.fc.retailer;
+  skuEl.value = AUDIT_STATE.fc.sku;
+  weekEl.value = AUDIT_STATE.fc.week;
+  monthEl.value = AUDIT_STATE.fc.month;
+  qEl.value = AUDIT_STATE.fc.q;
+  function onChange(){
+    AUDIT_STATE.fc = {retailer: retEl.value, sku: skuEl.value, week: weekEl.value, month: monthEl.value, q: qEl.value};
+    paint();
+  }
+  [retEl, skuEl, weekEl, monthEl].forEach(el => el.addEventListener('change', onChange));
+  qEl.addEventListener('input', onChange);
+  document.getElementById('fcFilClear').addEventListener('click', () => {
+    AUDIT_STATE.fc = {retailer:'', sku:'', week:'', month:'', q:''};
+    retEl.value=''; skuEl.value=''; weekEl.value=''; monthEl.value=''; qEl.value='';
+    paint();
+  });
+  paint();
 }
 
 // Calculation transparency: for each SKU show stock + daily production assumption + demand sources
