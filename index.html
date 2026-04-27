@@ -63,6 +63,17 @@
   .badge-amber{background:var(--amber);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
   .badge-green{background:var(--green);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
 
+  /* SKU snapshot row */
+  .snap-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:18px}
+  .snap{background:#fff;border-left:5px solid var(--green);padding:12px 14px;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+  .snap.amber{border-left-color:var(--amber)}
+  .snap.red{border-left-color:var(--red)}
+  .snap-sku{font-weight:bold;font-size:14px;color:var(--navy);margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
+  .snap-sku .badge-red,.snap-sku .badge-amber,.snap-sku .badge-green{font-size:10px;text-transform:uppercase}
+  .snap-stock{font-size:11px;color:#666;margin-bottom:6px}
+  .snap-action{font-size:12px;color:var(--dktext);line-height:1.45}
+  .snap-action b{color:var(--navy)}
+
   /* Tab navigation */
   .tabs{display:flex;gap:2px;margin:0 0 14px;border-bottom:2px solid var(--mdgrey);overflow-x:auto}
   .tab{padding:10px 16px;background:#EFF2F5;color:var(--navy);font-weight:bold;font-size:12px;cursor:pointer;border:none;border-radius:4px 4px 0 0;white-space:nowrap;text-transform:uppercase;letter-spacing:.4px;transition:background .15s}
@@ -168,6 +179,7 @@
 
 <main>
   <div id="banner"></div>
+  <div id="snapshot"></div>
   <div id="criticalAlerts"></div>
 
   <nav class="tabs" id="tabs">
@@ -613,6 +625,9 @@ function render(){
   }
   nwPanel.innerHTML = nwHtml;
 
+  // The single most important view: per-SKU snapshot — status + immediate action
+  renderSnapshot();
+
   // Critical alerts (persistent state)
   renderCritical();
 
@@ -657,6 +672,61 @@ function render(){
       <div class="fresh-value">${c.v}</div>
       <div class="fresh-when">${c.iso ? new Date(c.iso).toLocaleString('en-AU') : 'never'}</div>
     </div>`).join('');
+}
+
+// SKU snapshot — the single most important view for the team. One card per SKU showing:
+// status (RAG), current stock, 7-day short (if any), and the headline action they should take.
+function renderSnapshot(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const days7 = []; for(let i=0; i<7; i++){ const d=new Date(today); d.setDate(today.getDate()+i); days7.push(d); }
+  const days14 = []; for(let i=0; i<14; i++){ const d=new Date(today); d.setDate(today.getDate()+i); days14.push(d); }
+
+  const cards = SKUS.map(sku => {
+    const stock = getStockFor(sku);
+    const dailyDemand = buildDailyDemand(sku, days14);
+    let sod = stock; let carry = 0;
+    let short7 = 0; let short14 = 0;
+    days14.forEach((d, idx) => {
+      const dIso = isoDate(d);
+      const dem = (dailyDemand[dIso]||0) + carry;
+      const prod = (dIso === isoDate(today)) ? 0 : dailyCapacity(sku, d);
+      const supply = sod + prod;
+      let eod, short;
+      if(supply >= dem){ eod = supply - dem; short = 0; }
+      else { eod = 0; short = dem - supply; }
+      if(idx < 7) short7 += short;
+      short14 += short;
+      sod = eod; carry = short;
+    });
+
+    const totDemand7 = days7.reduce((s,d) => s + (dailyDemand[isoDate(d)]||0), 0);
+    let totProd7 = 0;
+    days7.forEach(d => { if(isoDate(d) !== isoDate(today)) totProd7 += dailyCapacity(sku, d); });
+
+    let cls, badge, action;
+    if(short7 > 0){
+      cls = 'red'; badge = 'AT RISK';
+      const line = (sku === '10L Cask') ? 'HMPS + Line A' : (sku === '5L Cask') ? 'Line A (alternating)' : (sku === '2L Bottle') ? 'SM Bottle line' : 'EP New Line';
+      action = `<b>Short ${fmt(short7)} units in next 7 days.</b> Run ${line} at full capacity. Defer lowest-priority customer if production can't catch up.`;
+    } else if(short14 > 0){
+      cls = 'amber'; badge = 'TIGHT';
+      action = `<b>Covered next 7 days. Short ${fmt(short14)} units in week 2.</b> Build stock this week to clear week 2 demand.`;
+    } else if(totDemand7 > 0 && (stock + totProd7) < totDemand7 * 1.2){
+      cls = 'amber'; badge = 'TIGHT';
+      action = `<b>Covered but no buffer.</b> 7-day demand ${fmt(totDemand7)} vs supply ${fmt(stock + totProd7)}. Watch for unexpected SOs.`;
+    } else {
+      cls = 'green'; badge = 'OK';
+      action = `<b>Comfortable.</b> Stock + 7 days production covers all forecast and SOs with buffer.`;
+    }
+
+    return `<div class="snap ${cls}">
+      <div class="snap-sku">${sku} <span class="badge-${cls}">${badge}</span></div>
+      <div class="snap-stock">Stock today: ${fmt(stock)} units · 7-day production: ${fmt(totProd7)} · 7-day demand: ${fmt(totDemand7)}</div>
+      <div class="snap-action">${action}</div>
+    </div>`;
+  });
+
+  document.getElementById('snapshot').innerHTML = `<div class="snap-grid">${cards.join('')}</div>`;
 }
 
 // Critical state alerts — persistent issues that need a banner
