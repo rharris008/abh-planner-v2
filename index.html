@@ -145,6 +145,9 @@
   <h2>14-day stock-on-hand heatmap (start of day)</h2>
   <div class="panel" id="heatmapPanel"></div>
 
+  <h2>Daily demand schedule (when orders ship + forecast spread)</h2>
+  <div class="panel" id="demandPanel"></div>
+
   <h2>4-week forecast vs supply per SKU</h2>
   <div class="panel" id="nextweekPanel"></div>
 
@@ -528,6 +531,9 @@ function render(){
   // Stock-on-hand heatmap (14-day, start of day)
   renderHeatmap();
 
+  // Daily demand schedule (parallel to heatmap, shows demand per SKU per day)
+  renderDemand();
+
   // Calculation transparency
   renderCalc();
 
@@ -787,6 +793,73 @@ function buildDailyDemand(sku, days){
   });
 
   return dailyDemand;
+}
+
+// Daily demand schedule, mirrors the heatmap layout. Cell = total demand units on that day.
+// Colour scaled vs current stock + production capacity: low (cool) → high (warm).
+function renderDemand(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todayIso = isoDate(today);
+  const days = [];
+  for(let i=0; i<HORIZON_DAYS; i++){
+    const d = new Date(today); d.setDate(today.getDate()+i);
+    days.push(d);
+  }
+
+  let html = '<div class="heatmap-wrap"><table class="heat">';
+  html += '<colgroup><col class="skucol">';
+  days.forEach(() => { html += '<col class="daycol">'; });
+  html += '</colgroup>';
+  html += '<thead><tr><th class="skucol">SKU</th>';
+  days.forEach(d => {
+    const cls = (isoDate(d) === todayIso) ? 'today' : (d.getDay()===0||d.getDay()===6 ? 'weekend' : '');
+    html += `<th class="${cls}">${fmtDate(d)}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  // Per-SKU row + a totals row at the bottom
+  const totalByDay = {};
+  days.forEach(d => totalByDay[isoDate(d)] = 0);
+
+  SKUS.forEach(sku => {
+    const dailyDemand = buildDailyDemand(sku, days);
+    const peak = Math.max(...Object.values(dailyDemand), 1);
+    html += `<tr><td class="skuname">${sku}</td>`;
+    days.forEach(d => {
+      const dIso = isoDate(d);
+      const dem = dailyDemand[dIso] || 0;
+      totalByDay[dIso] += dem;
+      let cls = 'grey';
+      if(dem > 0){
+        // Compare day's demand to that day's production + 10% of stock buffer
+        const supply = dailyCapacity(sku, d) + getStockFor(sku) * 0.10;
+        if(dem > supply * 1.5) cls = 'red';
+        else if(dem > supply) cls = 'amber';
+        else cls = 'green';
+      }
+      const we = (d.getDay()===0||d.getDay()===6) ? ' weekend' : '';
+      const tip = `${sku} ${fmtDate(d)}\nDemand: ${fmt(dem)} units\nProduction that day: ${fmt(dailyCapacity(sku,d))}\nStock available: ${fmt(getStockFor(sku))}`;
+      html += `<td class="cell ${cls}${we}" title="${tip}">${dem > 0 ? fmt(dem) : '·'}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  // Totals row
+  html += '<tr style="background:var(--ltgrey);font-weight:bold"><td class="skuname">TOTAL DEMAND</td>';
+  days.forEach(d => {
+    const dIso = isoDate(d);
+    const we = (d.getDay()===0||d.getDay()===6) ? ' weekend' : '';
+    html += `<td class="cell grey${we}" style="background:#eee;color:var(--navy)">${totalByDay[dIso] > 0 ? fmt(totalByDay[dIso]) : '·'}</td>`;
+  });
+  html += '</tr>';
+  html += '</tbody></table></div>';
+  html += `<div class="heat-legend">
+    <span><i style="background:var(--green)"></i>Demand within day's production capacity</span>
+    <span><i style="background:var(--amber)"></i>Demand above day's production but within stock buffer</span>
+    <span><i style="background:var(--red)"></i>Demand spike, exceeds production + buffer (concentration risk)</span>
+    <span><i style="background:#E5E5E5"></i>No demand</span>
+  </div>`;
+  document.getElementById('demandPanel').innerHTML = html;
 }
 
 function renderHeatmap(){
