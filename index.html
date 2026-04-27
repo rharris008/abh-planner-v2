@@ -195,7 +195,10 @@
     <div class="breakdown" id="breakdown"></div>
   </div>
 
-  <h2>Unfulfillable orders (next 14 days)</h2>
+  <h2>Overdue dispatches (must ship today)</h2>
+  <div id="overdueDispatches" class="section-card"></div>
+
+  <h2>Upcoming unfulfillable orders (production won't catch up)</h2>
   <div id="unfulfillable" class="section-card"></div>
 
   <h2>Production capacity (next 14 days)</h2>
@@ -898,48 +901,86 @@ function wireExport(){
 // If the line cannot be fully shipped from projected stock at its ship_date, flag it.
 // ============================================================
 function renderUnfulfillable(){
+  const todayIso = isoDate(new Date());
   const horizonEnd = new Date(); horizonEnd.setDate(horizonEnd.getDate() + 14);
-  // Group order lines per SKU sorted by ship_date
-  const linesBySku = {};
-  SKUS.forEach(s => linesBySku[s] = []);
-  DATA.orders.forEach(l => {
-    if(!l.ship_date) return;
-    const d = new Date(l.ship_date);
-    if(d > horizonEnd) return;
-    if(!linesBySku[l.sku]) return;
-    linesBySku[l.sku].push(l);
-  });
-  SKUS.forEach(s => linesBySku[s].sort((a,b) => a.ship_date.localeCompare(b.ship_date)));
+  const horizonEndIso = isoDate(horizonEnd);
 
+  // Split orders: overdue (ship_date < today) vs upcoming (today..today+14)
+  const overdueLines = [];
+  const upcomingLinesBySku = {};
+  SKUS.forEach(s => upcomingLinesBySku[s] = []);
+  DATA.orders.forEach(l => {
+    if(!l.ship_date || !SKUS.includes(l.sku)) return;
+    if(l.ship_date < todayIso){
+      overdueLines.push(l);
+    } else if(l.ship_date <= horizonEndIso){
+      upcomingLinesBySku[l.sku].push(l);
+    }
+  });
+  // Sort each
+  overdueLines.sort((a,b) => a.ship_date.localeCompare(b.ship_date));
+  SKUS.forEach(s => upcomingLinesBySku[s].sort((a,b) => a.ship_date.localeCompare(b.ship_date)));
+
+  // === OVERDUE DISPATCHES ===
+  const overdueEl = document.getElementById('overdueDispatches');
+  if(overdueLines.length === 0){
+    overdueEl.innerHTML = '<div class="section-empty">No overdue dispatches.</div>';
+  } else {
+    let html = `<div class="unful-headers"><div>SKU</div><div>Customer / SO</div><div>Ship date</div><div style="text-align:right">Units</div><div style="text-align:right">Days late</div></div>`;
+    overdueLines.forEach(line => {
+      const cust = (line.customer || '').split(':').pop().trim().slice(0, 50);
+      const daysLate = Math.round((new Date(todayIso) - new Date(line.ship_date)) / 86400000);
+      html += `<div class="unful-row">
+        <div class="unful-sku">${line.sku}</div>
+        <div class="unful-cust">${cust} <small style="color:#888">${line.doc_num||''}</small></div>
+        <div class="unful-date">${fmtDate(new Date(line.ship_date))}</div>
+        <div class="unful-qty">${fmtNum(line.units_ordered)}</div>
+        <div class="unful-short">${daysLate}d</div>
+      </div>`;
+    });
+    overdueEl.innerHTML = html;
+  }
+
+  // === UPCOMING UNFULFILLABLE (production-aware) ===
+  // For each SKU, walk forward by ship_date. Each day, add that day's planned production
+  // to available stock. If an order's units > available, flag it.
   const unfulfillable = [];
   SKUS.forEach(sku => {
-    let stock = getStockFor(sku);
-    linesBySku[sku].forEach(line => {
+    let avail = getStockFor(sku);
+    let lastDate = todayIso;
+    upcomingLinesBySku[sku].forEach(line => {
+      // Add production from lastDate (exclusive) to ship_date (exclusive)
+      // Production already includes weekends/holidays as 0
+      const sd = new Date(line.ship_date);
+      const ld = new Date(lastDate);
+      const cur = new Date(ld);
+      cur.setDate(cur.getDate() + 1);
+      while(cur < sd){
+        avail += dailyCapacityFor(sku, cur);
+        cur.setDate(cur.getDate() + 1);
+      }
+      lastDate = line.ship_date;
       const need = Number(line.units_ordered) || 0;
-      if(stock >= need){
-        stock -= need;
+      if(avail >= need){
+        avail -= need;
       } else {
-        const shortfall = need - Math.max(0, stock);
-        unfulfillable.push({sku, line, shortfall, available: Math.max(0, stock)});
-        stock = 0;
+        unfulfillable.push({sku, line, shortfall: need - Math.max(0, avail), avail: Math.max(0, avail)});
+        avail = 0;
       }
     });
   });
 
   const c = document.getElementById('unfulfillable');
   if(unfulfillable.length === 0){
-    c.innerHTML = '<div class="section-empty">All open orders shippable from current stock.</div>';
+    c.innerHTML = '<div class="section-empty">All upcoming orders covered by current stock + planned production.</div>';
     return;
   }
   let html = `<div class="unful-headers"><div>SKU</div><div>Customer / SO</div><div>Ship date</div><div style="text-align:right">Need</div><div style="text-align:right">Short</div></div>`;
-  const todayIso = isoDate(new Date());
   unfulfillable.forEach(u => {
     const cust = (u.line.customer || '').split(':').pop().trim().slice(0, 50);
-    const isOverdue = u.line.ship_date < todayIso;
-    const overdueLabel = isOverdue ? ' <span style="background:var(--red);color:#fff;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:bold">OVERDUE</span>' : '';
     html += `<div class="unful-row">
       <div class="unful-sku">${u.sku}</div>
-      <div class="unful-cust">${cust} <small style="color:#888">${u.line.doc_num||''}</small>${overdueLabel}</div>
+      <div class="unful-cust">${cust} <small style="color:#888">${u.line.doc_num||''}</small></div>
       <div class="unful-date">${fmtDate(new Date(u.line.ship_date))}</div>
       <div class="unful-qty">${fmtNum(u.line.units_ordered)}</div>
       <div class="unful-short">${fmtNum(u.shortfall)}</div>
