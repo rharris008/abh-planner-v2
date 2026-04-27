@@ -63,6 +63,21 @@
   .badge-amber{background:var(--amber);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
   .badge-green{background:var(--green);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
 
+  /* How-to-read panel */
+  .howto{background:#fff;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.06);padding:14px 18px;margin-bottom:18px;font-size:12px}
+  .howto summary{cursor:pointer;font-size:13px;color:var(--navy);outline:none;padding:2px 0}
+  .howto summary:hover{color:var(--blue)}
+  .howto-body{margin-top:10px;line-height:1.55;color:var(--dktext)}
+  .howto-body p{margin:6px 0}
+  .howto-body p b{color:var(--navy)}
+  .lg-green{background:var(--green);color:#fff;padding:1px 7px;border-radius:3px;font-size:11px;font-weight:bold}
+  .lg-amber{background:var(--amber);color:#fff;padding:1px 7px;border-radius:3px;font-size:11px;font-weight:bold}
+  .lg-red{background:var(--red);color:#fff;padding:1px 7px;border-radius:3px;font-size:11px;font-weight:bold}
+  .lg-grey{background:#E5E5E5;color:#777;padding:1px 7px;border-radius:3px;font-size:11px;font-weight:bold}
+
+  /* Section sub-text under H2 */
+  .h2-sub{font-size:11px;color:#666;margin:-4px 0 10px;font-style:italic}
+
   /* Critical alerts */
   .crit{background:#FFF5F5;border-left:5px solid var(--red);padding:14px 18px;border-radius:4px;margin-bottom:14px;font-size:13px}
   .crit-title{font-weight:bold;color:var(--red);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;font-size:11px}
@@ -147,31 +162,53 @@
   <div id="banner"></div>
   <div id="criticalAlerts"></div>
 
+  <details class="howto" open>
+    <summary><b>How to read this planner</b> (click to collapse)</summary>
+    <div class="howto-body">
+      <p><b>Who it's for:</b> Pureau fulfilment + sales teams. Answers a single question — over the next 14 days, will every order ship in full?</p>
+      <p><b>Production assumption:</b> 10L Cask = 11,520 units/day weekday (120 pallets at 96 UPP, target across HMPS + Line A). 5L Cask = 0 (Line B out 13/04 to 13/06). 2L = 1,670/day; 600ml 12pk = 2,948; 600ml 6pk = 4,120 — all from W14-W17 NS Build 4-week average. Saturday = half rate for cask SKUs only; bottle lines weekday-only. Sundays + public holidays = 0.</p>
+      <p><b>Demand sources:</b> WW + Coles forecasts use the <i>order_date</i> from each forecast row (their actual dispatch date). Metcash forecasts have no order_date so spread across workdays of the week. Confirmed open SOs sit on their <i>ship_date</i>. Per-day demand = MAX(forecast on that day, SOs on that day) to avoid double-counting where an SO confirms a forecasted volume. If a forecast or SO falls on a public holiday or weekend, it shifts forward to the next workday (we can't dispatch).</p>
+      <p><b>Heatmap cells:</b> top number = start-of-day stock (real, never goes below zero). Small "↓N" underneath = total shipments leaving stock that day. If demand exceeds supply, cell shows "↓demand (−short)" and the unshipped portion carries forward as extra demand the next day.</p>
+      <p><b>Cell colours:</b> <span class="lg-green">green</span> stock + production covers demand with buffer · <span class="lg-amber">amber</span> covers exactly, no buffer · <span class="lg-red">red</span> shortfall, can't ship in full · <span class="lg-grey">grey</span> no demand that day.</p>
+      <p><b>Reconciliation:</b> every figure on this page can be traced. Click any SO number to open the source in NetSuite. The Reconciliation section ties Supabase totals back to NS Report 752 and saved search 6137.</p>
+      <p><b>Refresh:</b> page auto-refreshes every 5 minutes from Supabase. Underlying NS sync runs hourly Mon-Fri 06:00-20:00 + 3x Saturday.</p>
+    </div>
+  </details>
+
   <h2>At-risk by customer <span class="count" id="byCustomerCount"></span></h2>
+  <div class="h2-sub">Open SO lines that won't ship in full, grouped by customer and sorted by priority (Woolworths → Coles → Metcash → Amazon → Other). One-click email draft for each customer.</div>
   <div class="panel" id="byCustomerPanel"></div>
 
   <h2>Recommended actions</h2>
+  <div class="h2-sub">Concrete next moves per at-risk SKU. Specific options the production scheduler or sales team can act on today.</div>
   <div class="panel" id="actionsPanel"></div>
 
   <h2>Overdue dispatches <span class="count" id="overdueCount"></span></h2>
+  <div class="h2-sub">SOs whose ship_date is past today and have not yet shipped. These need to leave the warehouse first, before any forward-week orders.</div>
   <div class="panel" id="overduePanel"></div>
 
   <h2>At-risk orders, today through today + 14 days <span class="count" id="atriskCount"></span></h2>
+  <div class="h2-sub">Per-line view of every SO that won't ship from current stock + planned production. Walks each SKU forward day-by-day. Click any SO number to view in NetSuite.</div>
   <div class="panel" id="atriskPanel"></div>
 
   <h2>14-day stock + demand heatmap</h2>
+  <div class="h2-sub">For each SKU on each day: top number = start-of-day stock; small ↓N underneath = shipments leaving that day. Red cell = unshippable shortfall (carries forward to next day). Hover any cell for the full breakdown.</div>
   <div class="panel" id="heatmapPanel"></div>
 
   <h2>4-week forecast vs supply per SKU</h2>
+  <div class="h2-sub">Looking 4 weeks ahead. For each week, demand = MAX(retailer forecast for the week, confirmed SOs in the week). Supply = current stock + cumulative production through that week, less SOs that ship before then. Negative = need to build stock or defer.</div>
   <div class="panel" id="nextweekPanel"></div>
 
   <h2>Calculation transparency, where every number comes from</h2>
+  <div class="h2-sub">For each SKU, day-by-day walk: SOD stock → +Production → −Demand → EOD stock. Every cell on every other section traces back to these rows.</div>
   <div class="panel" id="calcPanel"></div>
 
   <h2>Reconciliation to NetSuite</h2>
+  <div class="h2-sub">Every Supabase total tied back to its NetSuite source with click-through links. Stock goes to NS Report 752; open SOs go to saved search 6137.</div>
   <div class="panel" id="reconPanel"></div>
 
   <h2>Data freshness</h2>
+  <div class="h2-sub">When was each data source last refreshed. Stock + open SOs sync hourly from NS. Retailer forecasts arrive by email and parse into Supabase. Stale forecast = retailer hasn't sent in a while.</div>
   <div class="panel"><div class="fresh-grid" id="freshGrid"></div></div>
 </main>
 
