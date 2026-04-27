@@ -48,6 +48,30 @@
   .badge-amber{background:var(--amber);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
   .badge-green{background:var(--green);color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:bold}
 
+  /* Critical alerts */
+  .crit{background:#FFF5F5;border-left:5px solid var(--red);padding:14px 18px;border-radius:4px;margin-bottom:14px;font-size:13px}
+  .crit-title{font-weight:bold;color:var(--red);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;font-size:11px}
+  .crit-detail{color:var(--dktext)}
+
+  /* Customer-grouped at-risk */
+  .cust-card{background:#fff;border-left:4px solid var(--red);padding:12px 14px;border-radius:3px;margin:8px 14px;font-size:12px}
+  .cust-card.amber{border-left-color:var(--amber)}
+  .cust-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .cust-name{font-weight:bold;color:var(--navy);font-size:13px}
+  .cust-summary{color:var(--red);font-weight:bold}
+  .cust-actions{font-size:11px}
+  .cust-actions a{color:var(--blue);text-decoration:none;margin-left:10px}
+  .cust-line{font-size:11px;color:#555;padding:3px 0;border-top:1px dotted #DDD;display:grid;grid-template-columns:80px 110px 100px 1fr;gap:8px;align-items:center}
+  .cust-line:first-of-type{border-top:none}
+
+  /* Actions */
+  .act-card{padding:14px 16px;border-left:4px solid var(--blue);background:#F4FAFF;margin:8px 14px;border-radius:3px;font-size:12px}
+  .act-card.urgent{border-left-color:var(--red);background:#FFF5F5}
+  .act-card.warn{border-left-color:var(--amber);background:#FFFAF0}
+  .act-title{font-weight:bold;color:var(--navy);margin-bottom:4px}
+  .act-options{margin-top:6px}
+  .act-options li{margin:2px 0}
+
   /* Stock heatmap */
   .heatmap-wrap{padding:14px;overflow-x:auto}
   table.heat{border-collapse:collapse;font-size:11px;min-width:100%}
@@ -102,6 +126,13 @@
 
 <main>
   <div id="banner"></div>
+  <div id="criticalAlerts"></div>
+
+  <h2>At-risk by customer <span class="count" id="byCustomerCount"></span></h2>
+  <div class="panel" id="byCustomerPanel"></div>
+
+  <h2>Recommended actions</h2>
+  <div class="panel" id="actionsPanel"></div>
 
   <h2>Overdue dispatches <span class="count" id="overdueCount"></span></h2>
   <div class="panel" id="overduePanel"></div>
@@ -112,7 +143,7 @@
   <h2>14-day stock-on-hand heatmap (start of day)</h2>
   <div class="panel" id="heatmapPanel"></div>
 
-  <h2>Next week, forecast vs supply per SKU</h2>
+  <h2>4-week forecast vs supply per SKU</h2>
   <div class="panel" id="nextweekPanel"></div>
 
   <h2>Reconciliation to NetSuite</h2>
@@ -209,9 +240,24 @@ function dailyCapacity(sku, dateObj){
 
 function reasonForShortfall(sku, shipDateIso){
   if(sku === '5L Cask' && shipDateIso >= LINE_B_OUTAGE_START && shipDateIso <= LINE_B_OUTAGE_END){
-    return 'Line B outage 13/04–13/06: zero 5L production from current line config';
+    return 'Line B outage 13/04 to 13/06: zero 5L production possible';
   }
   return 'Stock + planned production insufficient by ship date';
+}
+
+// Customer priority for allocation. Higher number = higher priority (gets allocated first).
+const CUSTOMER_PRIORITY = [
+  {match: /woolworth|ww/i,       name: 'Woolworths',  rank: 100},
+  {match: /coles/i,              name: 'Coles',       rank: 90},
+  {match: /metcash|iga/i,        name: 'Metcash',     rank: 80},
+  {match: /amazon/i,             name: 'Amazon',      rank: 70},
+];
+function customerPriority(custName){
+  for(const p of CUSTOMER_PRIORITY) if(p.match.test(custName||'')) return p;
+  return {name:'Other', rank:50};
+}
+function customerKey(custName){
+  return customerPriority(custName).name;
 }
 
 // ── DATA LOAD ──
@@ -306,65 +352,61 @@ function computeAtRisk(){
   return {overdue, atRisk};
 }
 
-// ── COMPUTE: next-week forecast vs supply per SKU ──
+// ── COMPUTE: 4-week forecast vs supply per SKU ──
 function computeNextWeek(){
-  // "Next week" = the upcoming Mon-Sun starting on the next Monday from today (inclusive if today is Monday)
   const today = new Date(); today.setHours(0,0,0,0);
   const dow = today.getDay();
   const daysToMonday = (dow === 0) ? 1 : (dow === 1 ? 7 : (8 - dow));
   const nextMonday = new Date(today); nextMonday.setDate(today.getDate() + daysToMonday);
-  const nextSunday = new Date(nextMonday); nextSunday.setDate(nextMonday.getDate() + 6);
-  const nextMondayIso = isoDate(nextMonday);
-
   const allFc = [...DATA.forecasts.coles, ...DATA.forecasts.ww, ...DATA.forecasts.metcash];
 
-  const rows = [];
-  SKUS.forEach(sku => {
-    // Forecast for next week (matching by week_date in [nextMonday..nextSunday])
-    let fc = 0;
-    allFc.forEach(f => {
-      if(f.sku !== sku || !f.week_date) return;
-      const wd = f.week_date.slice(0,10);
-      if(wd >= nextMondayIso && wd <= isoDate(nextSunday)) fc += Number(f.units)||0;
+  const weekRows = []; // 4 rows × 5 SKUs
+  for(let w=0; w<4; w++){
+    const weekStart = new Date(nextMonday); weekStart.setDate(nextMonday.getDate() + w*7);
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
+    const weekStartIso = isoDate(weekStart);
+    const weekEndIso = isoDate(weekEnd);
+
+    SKUS.forEach(sku => {
+      let fc = 0;
+      allFc.forEach(f => {
+        if(f.sku !== sku || !f.week_date) return;
+        const wd = f.week_date.slice(0,10);
+        if(wd >= weekStartIso && wd <= weekEndIso) fc += Number(f.units)||0;
+      });
+      let weekSO = 0;
+      DATA.orders.forEach(l => {
+        if(l.sku !== sku || !l.ship_date) return;
+        if(l.ship_date >= weekStartIso && l.ship_date <= weekEndIso) weekSO += Number(l.units_ordered)||0;
+      });
+      const demand = Math.max(fc, weekSO);
+
+      let preWeekSO = 0;
+      DATA.orders.forEach(l => {
+        if(l.sku !== sku || !l.ship_date) return;
+        if(l.ship_date < weekStartIso) preWeekSO += Number(l.units_ordered)||0;
+      });
+
+      let prodToWeekEnd = 0;
+      const cur = new Date(today); cur.setDate(today.getDate()+1);
+      while(cur <= weekEnd){
+        prodToWeekEnd += dailyCapacity(sku, cur);
+        cur.setDate(cur.getDate()+1);
+      }
+
+      const stock = getStockFor(sku);
+      const supply = stock + prodToWeekEnd - preWeekSO;
+      const surplus = supply - demand;
+      weekRows.push({week: w+1, weekStart, weekEnd, sku, fc, weekSO, demand, preWeekSO, prodToWeekEnd, supply, surplus});
     });
-
-    // Open SOs already placed for next week (subset of next 14 days SO data)
-    let nextWeekSO = 0;
-    DATA.orders.forEach(l => {
-      if(l.sku !== sku || !l.ship_date) return;
-      if(l.ship_date >= nextMondayIso && l.ship_date <= isoDate(nextSunday)) nextWeekSO += Number(l.units_ordered)||0;
-    });
-    const nextWeekDemand = Math.max(fc, nextWeekSO);
-
-    // Open SOs ship_date < next Monday (must clear before next week starts)
-    let preWeekSO = 0;
-    DATA.orders.forEach(l => {
-      if(l.sku !== sku || !l.ship_date) return;
-      if(l.ship_date < nextMondayIso) preWeekSO += Number(l.units_ordered)||0;
-    });
-
-    // Production from today up to end of next week
-    let prodToWeekEnd = 0;
-    const cur = new Date(today); cur.setDate(today.getDate()+1);
-    while(cur <= nextSunday){
-      prodToWeekEnd += dailyCapacity(sku, cur);
-      cur.setDate(cur.getDate()+1);
-    }
-
-    const stock = getStockFor(sku);
-    // Stock available to meet next-week demand = current stock + production - SOs already placed before next week
-    const supplyForNextWeek = stock + prodToWeekEnd - preWeekSO;
-    const surplus = supplyForNextWeek - nextWeekDemand;
-
-    rows.push({sku, stock, preWeekSO, prodToWeekEnd, nextWeekDemand, supplyForNextWeek, surplus});
-  });
-  return {rows, nextMonday, nextSunday};
+  }
+  return {rows: weekRows};
 }
 
 // ── RENDER ──
 function render(){
   const {overdue, atRisk} = computeAtRisk();
-  const {rows: nextWeekRows, nextMonday, nextSunday} = computeNextWeek();
+  const {rows: nextWeekRows} = computeNextWeek();
 
   // Banner
   const totalAtRisk = atRisk.length + overdue.length;
@@ -424,24 +466,41 @@ function render(){
     atriskPanel.innerHTML = '<div class="toolbar"><button onclick="exportCsv(\'atrisk\')">Export CSV</button></div>' + html;
   }
 
-  // Next week
+  // 4-week forecast vs supply
   const nwPanel = document.getElementById('nextweekPanel');
-  let nwHtml = `<div style="padding:10px 14px;font-size:11px;color:#666;border-bottom:1px solid var(--ltgrey)">Week ${fmtDate(nextMonday)} – ${fmtDate(nextSunday)}. Demand = MAX(forecast, confirmed SOs) for that week. Supply = current stock + production through end of next week, less SOs that must ship before then.</div>`;
-  nwHtml += '<table><thead><tr><th>SKU</th><th class="right">Stock today</th><th class="right">Pre-week SOs</th><th class="right">Production to end of next week</th><th class="right">Next week demand</th><th class="right">Surplus / Shortfall</th></tr></thead><tbody>';
-  nextWeekRows.forEach(r => {
-    const cls = r.surplus >= 0 ? 'green' : 'red';
-    const surplusCls = r.surplus >= 0 ? 'surplus' : 'short';
-    nwHtml += `<tr class="summary-row ${cls}">
-      <td class="sku">${r.sku}</td>
-      <td class="right">${fmt(r.stock)}</td>
-      <td class="right">${fmt(r.preWeekSO)}</td>
-      <td class="right">${fmt(r.prodToWeekEnd)}</td>
-      <td class="right">${fmt(r.nextWeekDemand)}</td>
-      <td class="${surplusCls}">${fmtSign(r.surplus)}</td>
-    </tr>`;
-  });
-  nwHtml += '</tbody></table>';
+  let nwHtml = `<div style="padding:10px 14px;font-size:11px;color:#666;border-bottom:1px solid var(--ltgrey)">For each of the next 4 weeks, demand = MAX(forecast, confirmed SOs). Supply = current stock + cumulative production through that week, less SOs already booked to ship before that week.</div>`;
+  // Pivot: rows = SKU, cols = 4 weeks
+  const byWeek = {1:[],2:[],3:[],4:[]};
+  nextWeekRows.forEach(r => byWeek[r.week].push(r));
+  const w1 = byWeek[1][0];
+  if(w1){
+    nwHtml += '<table><thead><tr><th>SKU</th>';
+    [1,2,3,4].forEach(w => {
+      const sample = byWeek[w][0];
+      nwHtml += `<th>Week ${w} (${fmtDate(sample.weekStart)} – ${fmtDate(sample.weekEnd)})</th>`;
+    });
+    nwHtml += '</tr></thead><tbody>';
+    SKUS.forEach(sku => {
+      nwHtml += `<tr><td class="sku">${sku}</td>`;
+      [1,2,3,4].forEach(w => {
+        const r = byWeek[w].find(x => x.sku === sku);
+        const cls = r.surplus >= 0 ? 'green' : 'red';
+        const surplusCls = r.surplus >= 0 ? 'surplus' : 'short';
+        nwHtml += `<td><div style="font-size:10px;color:#888">demand ${fmt(r.demand)} · supply ${fmt(r.supply)}</div>
+          <div class="${surplusCls}" style="font-size:13px;text-align:right">${fmtSign(r.surplus)}</div></td>`;
+      });
+      nwHtml += '</tr>';
+    });
+    nwHtml += '</tbody></table>';
+  }
   nwPanel.innerHTML = nwHtml;
+
+  // Critical alerts (persistent state)
+  renderCritical();
+
+  // At-risk grouped by customer + recommended actions
+  renderByCustomer(atRisk, overdue);
+  renderActions(atRisk, overdue, nextWeekRows);
 
   // Stock-on-hand heatmap (14-day, start of day)
   renderHeatmap();
@@ -475,6 +534,171 @@ function render(){
       <div class="fresh-value">${c.v}</div>
       <div class="fresh-when">${c.iso ? new Date(c.iso).toLocaleString('en-AU') : 'never'}</div>
     </div>`).join('');
+}
+
+// Critical state alerts — persistent issues that need a banner
+function renderCritical(){
+  const today = isoDate(new Date());
+  const alerts = [];
+  if(today >= LINE_B_OUTAGE_START && today <= LINE_B_OUTAGE_END){
+    const remaining = Math.round((new Date(LINE_B_OUTAGE_END) - new Date(today))/86400000);
+    alerts.push({
+      title: '5L Cask: Line B out — production paused',
+      detail: `Line B is out for the shed move from ${LINE_B_OUTAGE_START} to ${LINE_B_OUTAGE_END} (${remaining} days remaining). Zero 5L production possible from the current line config. All 5L orders during this window depend on existing stock (currently ${fmt(getStockFor('5L Cask'))} units).`
+    });
+  }
+  // Forecast staleness > 14 days
+  const checkStaleForecasts = [
+    ['Woolworths', DATA.forecasts.ww],
+    ['Coles', DATA.forecasts.coles],
+    ['Metcash', DATA.forecasts.metcash],
+  ];
+  checkStaleForecasts.forEach(([retailer, rows]) => {
+    const last = getLatestUpdated(rows);
+    if(last){
+      const days = (Date.now() - new Date(last).getTime())/86400000;
+      if(days > 14){
+        alerts.push({
+          title: `${retailer} forecast stale: ${Math.round(days)} days old`,
+          detail: `Last forecast received ${new Date(last).toLocaleDateString('en-AU')}. Chase ${retailer} for current week's forecast — planner is using stale demand data for this retailer.`
+        });
+      }
+    }
+  });
+
+  const c = document.getElementById('criticalAlerts');
+  if(alerts.length === 0){ c.innerHTML = ''; return; }
+  c.innerHTML = alerts.map(a =>
+    `<div class="crit"><div class="crit-title">⚠ ${a.title}</div><div class="crit-detail">${a.detail}</div></div>`
+  ).join('');
+}
+
+// Group at-risk + overdue by customer, with mailto: drafts and SO links
+function renderByCustomer(atRisk, overdue){
+  const byCust = {};
+  function add(line, cls, shortUnits, reason){
+    const cust = (line.customer||'').split(':').pop().trim() || 'Unknown';
+    const key = cust + '|' + customerKey(cust);
+    if(!byCust[key]) byCust[key] = {customer: cust, priority: customerPriority(cust), lines: [], totalUnits: 0, totalShort: 0, worstCls: 'amber'};
+    byCust[key].lines.push({line, cls, shortUnits, reason});
+    byCust[key].totalUnits += Number(line.units_ordered)||0;
+    byCust[key].totalShort += shortUnits;
+    if(cls === 'red') byCust[key].worstCls = 'red';
+  }
+  overdue.forEach(l => add(l, 'red', Number(l.units_ordered)||0, 'Overdue: original ship date already past'));
+  atRisk.forEach(r => add(r.line, 'red', r.short, r.reason));
+
+  const groups = Object.values(byCust).sort((a,b) => (b.priority.rank - a.priority.rank) || b.totalShort - a.totalShort);
+  document.getElementById('byCustomerCount').textContent = groups.length === 0 ? '' : `${groups.length} customer${groups.length!==1?'s':''}`;
+
+  const panel = document.getElementById('byCustomerPanel');
+  if(groups.length === 0){
+    panel.innerHTML = '<div class="panel-empty">No at-risk orders. Every customer is covered.</div>';
+    return;
+  }
+
+  let html = `<div style="padding:10px 14px;font-size:11px;color:#666;border-bottom:1px solid var(--ltgrey)">Sorted by customer priority. Click an SO to view in NetSuite, or "Email" to draft an apology email.</div>`;
+  groups.forEach(g => {
+    const subject = encodeURIComponent(`ABH Pureau supply update for ${g.customer}`);
+    const body = encodeURIComponent(
+      `Hi ${g.customer.split(' ')[0]},\n\n` +
+      `Heads up that we are tight on supply for the following Pureau order${g.lines.length>1?'s':''}:\n\n` +
+      g.lines.map(L => `- SO ${L.line.doc_num} ${L.line.sku} ship ${L.line.ship_date} (${fmt(L.line.units_ordered)} units): short ${fmt(L.shortUnits)}`).join('\n') +
+      `\n\nWill be in touch shortly with options. Apologies for any inconvenience.\n\nKind regards,\nABH`
+    );
+    const mailto = `mailto:?subject=${subject}&body=${body}`;
+    html += `<div class="cust-card ${g.worstCls}">
+      <div class="cust-head">
+        <div class="cust-name">${g.customer} <span style="font-size:10px;background:var(--ltgrey);padding:2px 6px;border-radius:3px;margin-left:4px">${g.priority.name}</span></div>
+        <div class="cust-summary">${g.lines.length} line${g.lines.length!==1?'s':''}, ${fmt(g.totalShort)} units short</div>
+      </div>
+      <div class="cust-actions"><a href="${mailto}">Email customer</a></div>
+      <div style="margin-top:8px">`;
+    g.lines.forEach(L => {
+      html += `<div class="cust-line">
+        <span style="font-weight:bold;color:var(--navy)">${L.line.sku}</span>
+        <span style="font-family:Menlo,monospace"><a href="${NS_TRAN_SEARCH(L.line.doc_num)}" target="_blank" style="color:var(--blue);text-decoration:none">${L.line.doc_num}</a></span>
+        <span>${fmtDateLong(new Date(L.line.ship_date))}</span>
+        <span style="color:#888">${L.reason} <strong style="color:var(--red)">(${fmt(L.shortUnits)} short)</strong></span>
+      </div>`;
+    });
+    html += '</div></div>';
+  });
+  panel.innerHTML = html;
+}
+
+// Recommended actions — concrete next steps per at-risk SKU
+function renderActions(atRisk, overdue, nextWeekRows){
+  const actions = [];
+  // Group at-risk by SKU
+  const skuRisk = {};
+  atRisk.forEach(r => { skuRisk[r.sku] = skuRisk[r.sku] || {short:0, lines:0}; skuRisk[r.sku].short += r.short; skuRisk[r.sku].lines += 1; });
+
+  Object.keys(skuRisk).forEach(sku => {
+    const s = skuRisk[sku];
+    if(sku === '5L Cask'){
+      actions.push({pri:'urgent', title:`5L Cask: ${fmt(s.short)} units short across ${s.lines} order line${s.lines!==1?'s':''}`,
+        options: [
+          'Cannot produce more 5L until Line B comes back 13/06',
+          'Defer Metcash 5L orders 7 days (lower priority retailer)',
+          'Allocate available stock to Woolworths first, then Coles',
+          'Contact contract bottler for emergency 5L supply (typical 5-day lead time)',
+          'Offer customers a 10L Cask substitute where SKU swap is acceptable'
+        ]});
+    } else if(sku === '10L Cask'){
+      actions.push({pri:'urgent', title:`10L Cask: ${fmt(s.short)} units short across ${s.lines} order line${s.lines!==1?'s':''}`,
+        options: [
+          `Run HMPS Dual full week — produces 15,360/day, ${Math.ceil(s.short/15360)} day${Math.ceil(s.short/15360)!==1?'s':''} clears the gap`,
+          'Add Saturday HMPS shift (7,680 units single-shift Sat capacity)',
+          'Move Cask Line A to 10L Dual instead of 5L this week (Line B is out anyway)',
+          'Defer lowest-priority Metcash orders if production can\'t catch up'
+        ]});
+    } else if(sku === '600ml 12pk'){
+      actions.push({pri:'urgent', title:`600ml 12pk: ${fmt(s.short)} units short`,
+        options: [
+          `Run EP New Line on 12pk: 8,568 units/day → ${Math.ceil(s.short/8568)} day${Math.ceil(s.short/8568)!==1?'s':''} of production clears`,
+          'Reduce 6pk runs this week to free EP New Line for 12pk'
+        ]});
+    } else if(sku === '600ml 6pk'){
+      actions.push({pri:'urgent', title:`600ml 6pk: ${fmt(s.short)} units short`,
+        options: [
+          `Run EP New Line on 6pk: 16,128 units/day → ${Math.ceil(s.short/16128)} day${Math.ceil(s.short/16128)!==1?'s':''} clears`,
+          'Reduce 12pk runs this week to free EP New Line for 6pk'
+        ]});
+    } else if(sku === '2L Bottle'){
+      actions.push({pri:'urgent', title:`2L Bottle: ${fmt(s.short)} units short`,
+        options: [
+          `SM Bottle line: 6,656 units/day → ${Math.ceil(s.short/6656)} day${Math.ceil(s.short/6656)!==1?'s':''} clears`,
+          'Add Saturday shift if mid-week capacity already maxed'
+        ]});
+    }
+  });
+
+  // Forward-looking warnings from 4-week view
+  nextWeekRows.forEach(r => {
+    if(r.surplus < 0 && !skuRisk[r.sku]){
+      actions.push({pri:'warn', title:`${r.sku}: forecast shortfall of ${fmt(-r.surplus)} units in week ${fmtDate(r.weekStart||new Date())}`,
+        options: ['Build stock ahead by running this SKU at full capacity this week.']});
+    }
+  });
+
+  if(overdue.length > 0){
+    const skus = [...new Set(overdue.map(o => o.sku))];
+    actions.unshift({pri:'urgent', title:`${overdue.length} dispatch${overdue.length!==1?'es':''} overdue (${skus.join(', ')})`,
+      options: ['Dispatch today. Email each customer to confirm new ETA. Use the "Email customer" button on each row in the by-customer view above.']});
+  }
+
+  const panel = document.getElementById('actionsPanel');
+  if(actions.length === 0){
+    panel.innerHTML = '<div class="panel-empty">No actions required. Everything is on track.</div>';
+    return;
+  }
+  panel.innerHTML = actions.map(a =>
+    `<div class="act-card ${a.pri}">
+      <div class="act-title">${a.title}</div>
+      <div class="act-options">Options:<ul>${a.options.map(o => `<li>${o}</li>`).join('')}</ul></div>
+    </div>`
+  ).join('');
 }
 
 // Build 14-day daily stock-on-hand projection per SKU, walking forward day-by-day with
