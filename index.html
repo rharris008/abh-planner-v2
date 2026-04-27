@@ -193,54 +193,63 @@
 
   <nav class="tabs" id="tabs">
     <button class="tab active" data-tab="summary">Summary</button>
-    <button class="tab" data-tab="audit">Audit (every line)</button>
+    <button class="tab" data-tab="heatmap">Heatmap detail</button>
+    <button class="tab" data-tab="orders">Orders</button>
+    <button class="tab" data-tab="forecasts">Forecasts</button>
+    <button class="tab" data-tab="recon">Reconciliation</button>
     <button class="tab" data-tab="help">How to read</button>
   </nav>
 
-  <!-- SUMMARY TAB — closing stock heatmap + overdue. Nothing else. -->
+  <!-- SUMMARY TAB — closing stock heatmap + overdue. Front page. -->
   <section class="tab-pane active" id="pane-summary">
     <h2>Closing stock heatmap (end of day, 14 days forward)</h2>
-    <div class="h2-sub">For each SKU on each day, the units physically available at the END of that day after shipments leave and production lands. Walks forward from today's NetSuite stock. Stock never goes below zero; if demand exceeds supply on a day, the unshippable portion carries forward to the next day. <span class="lg-green">Green</span> = closing stock comfortably positive · <span class="lg-amber">amber</span> = positive but tight, less than 1.5 days of next-day demand · <span class="lg-red">red</span> = shortfall on that day (couldn't ship in full) · <span class="lg-grey">grey</span> = no demand that day. Hover any cell for the full breakdown including SOD, production, shipments, shortfall.</div>
+    <div class="h2-sub">For each SKU on each day, the units physically available at the END of that day after shipments leave and production lands. Stock never goes below zero; if demand exceeds supply on a day, the unshippable portion carries forward to the next day. <span class="lg-green">Green</span> = closing stock comfortably positive · <span class="lg-amber">amber</span> = positive but tight · <span class="lg-red">red</span> = shortfall on that day · <span class="lg-grey">grey</span> = no demand. Hover any cell for the full breakdown.</div>
     <div class="panel" id="heatmapPanel"></div>
 
     <h2>Overdue dispatches <span class="count" id="overdueCount"></span></h2>
-    <div class="h2-sub">SOs whose ship_date is past today and have not yet shipped. These ship first, before any forward-week orders. Click any SO number to view in NetSuite.</div>
+    <div class="h2-sub">SOs whose ship_date is past today and have not yet shipped. Click any SO number to view in NetSuite.</div>
     <div class="panel" id="overduePanel"></div>
   </section>
 
-  <!-- AUDIT TAB — 100% data trace, line-by-line every input. -->
-  <section class="tab-pane" id="pane-audit">
-    <h2>Audit, every input on this planner</h2>
-    <div class="h2-sub">Every line of every data source the planner uses. If a number is on the Summary tab, you can find the underlying row here. Click any source link to open the same data in NetSuite for line-by-line cross-check.</div>
+  <!-- HEATMAP DETAIL TAB — same heatmap + day-by-day calc -->
+  <section class="tab-pane" id="pane-heatmap">
+    <h2>Day-by-day calculation per SKU</h2>
+    <div class="h2-sub">SOD stock → +Production → −Shipments → EOD stock. Every cell of the Summary heatmap derives from these rows.</div>
+    <div class="panel" id="calcPanel"></div>
+  </section>
 
-    <h2>1. Production assumptions per SKU</h2>
-    <div class="h2-sub">The exact daily production rate the heatmap uses for each SKU. Source documented per row. Change any rate by editing the constants in the page source — currently hardcoded to make rate changes deliberate, not silent.</div>
+  <!-- ORDERS TAB — all open SO lines, filterable -->
+  <section class="tab-pane" id="pane-orders">
+    <h2>Every open Sales Order line — filterable</h2>
+    <div class="h2-sub">All Pending Fulfillment SO lines for ABH subsidiary 2, Pureau items only. Filter by SKU, customer, ship-date range, or free-text. Each row links back to NetSuite. Source: SuiteQL on transaction.SalesOrd.</div>
+    <div class="panel" id="auditSOPanel"></div>
+  </section>
+
+  <!-- FORECASTS TAB — combined retailer forecasts, filterable -->
+  <section class="tab-pane" id="pane-forecasts">
+    <h2>Retailer forecasts, every line — filterable</h2>
+    <div class="h2-sub">All WW, Coles, Metcash forecast rows combined. Filter by retailer, SKU, week, month, or free-text. Each row mirrors the source spreadsheet. Counts + totals update as you filter.</div>
+    <div class="panel" id="auditFCPanel"></div>
+  </section>
+
+  <!-- RECONCILIATION TAB — production rates + holidays + stock + NS recon + freshness -->
+  <section class="tab-pane" id="pane-recon">
+    <h2>Production assumptions per SKU</h2>
+    <div class="h2-sub">The exact daily production rate the heatmap uses. Source documented per row.</div>
     <div class="panel" id="auditRatesPanel"></div>
 
-    <h2>2. Public holidays loaded</h2>
-    <div class="h2-sub">Every date treated as zero-production. Source: Supabase <code>public_holidays</code> table (same source as the existing planner).</div>
+    <h2>Public holidays loaded</h2>
+    <div class="h2-sub">Every date treated as zero production. Source: Supabase public_holidays table.</div>
     <div class="panel" id="auditPHPanel"></div>
 
-    <h2>3. Stock on hand from NetSuite Report 752</h2>
-    <div class="h2-sub">Every Pureau SKU stock row in Supabase. Click to open Report 752 in NS.</div>
+    <h2>Stock on hand from NetSuite Report 752</h2>
+    <div class="h2-sub">Every Pureau SKU stock row in Supabase. Click to open Report 752 in NetSuite.</div>
     <div class="panel" id="auditStockPanel"></div>
 
-    <h2>4. Open Sales Order lines from NetSuite (saved search 6137) — filterable</h2>
-    <div class="h2-sub">Every Pending Fulfillment SO line for ABH subsidiary 2, Pureau items only. Filter by SKU, customer, ship-date range, or free-text. Each row links back to NetSuite for direct cross-check.</div>
-    <div class="panel" id="auditSOPanel"></div>
-
-    <h2>5. Retailer forecasts, every line — filterable</h2>
-    <div class="h2-sub">All WW, Coles, Metcash forecast rows in one table. Use the filters to narrow by retailer, SKU, week, month, or free-text. Counts and totals update as you filter. Each row mirrors the source spreadsheet for line-by-line audit.</div>
-    <div class="panel" id="auditFCPanel"></div>
-
-    <h2>8. Day-by-day calculation per SKU</h2>
-    <div class="h2-sub">SOD stock → +Production → −Shipments → EOD stock. The entire heatmap derives from these rows.</div>
-    <div class="panel" id="calcPanel"></div>
-
-    <h2>9. Reconciliation totals to NetSuite</h2>
+    <h2>Reconciliation totals to NetSuite</h2>
     <div class="panel" id="reconPanel"></div>
 
-    <h2>10. Data freshness</h2>
+    <h2>Data freshness</h2>
     <div class="panel"><div class="fresh-grid" id="freshGrid"></div></div>
   </section>
 
@@ -338,6 +347,22 @@ async function sbGet(path){
   const r = await fetch(SB_URL + '/rest/v1/' + path, { headers:{apikey:SB_KEY, Authorization:'Bearer '+SB_KEY} });
   if(!r.ok) throw new Error(path + ' → HTTP ' + r.status);
   return r.json();
+}
+
+// CSV export helper. headers = array of column labels. rows = array of arrays.
+function downloadCSV(filename, headers, rows){
+  const esc = v => {
+    if(v === null || v === undefined) return '';
+    const s = String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+  };
+  const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\r\n');
+  const blob = new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
 }
 
 // Daily production capacity (units) for a SKU on a given Date.
@@ -1226,6 +1251,7 @@ function renderAuditSO(){
     <label>to <input type="date" id="soFilTo"></label>
     <label>Search <input type="text" class="search" id="soFilQ" placeholder="SO #, customer, anything…"></label>
     <button class="clear" id="soFilClear">Clear</button>
+    <button class="clear" id="soFilCsv" style="background:var(--blue);color:#fff">Export CSV</button>
   </div>`;
   html += `<table>
     <thead><tr><th>Ship date</th><th>SO #</th><th>Customer</th><th>SKU</th><th class="right">Units</th><th>Status</th></tr></thead>
@@ -1255,6 +1281,19 @@ function renderAuditSO(){
     AUDIT_STATE.so = {sku:'', custKey:'', from:'', to:'', q:''};
     skuEl.value = ''; custEl.value = ''; fromEl.value = ''; toEl.value = ''; qEl.value = '';
     paint();
+  });
+  document.getElementById('soFilCsv').addEventListener('click', () => {
+    const lines = applyFilters().sort((a,b) => (a.ship_date||'').localeCompare(b.ship_date||'') || (a.doc_num||'').localeCompare(b.doc_num||''));
+    const rows = lines.map(l => [
+      l.ship_date||'',
+      l.doc_num||'',
+      (l.customer||'').split(':').pop().trim(),
+      l.sku||'',
+      Number(l.units_ordered)||0,
+      l.status||'',
+    ]);
+    downloadCSV(`abh_open_sos_${isoDate(new Date())}.csv`,
+      ['Ship date','SO #','Customer','SKU','Units','Status'], rows);
   });
   paint();
 }
@@ -1336,6 +1375,7 @@ function renderAuditForecasts(){
     <label>Month <select id="fcFilMonth"><option value="">All</option>${monthOpts}</select></label>
     <label>Search <input type="text" class="search" id="fcFilQ" placeholder="anything…"></label>
     <button class="clear" id="fcFilClear">Clear</button>
+    <button class="clear" id="fcFilCsv" style="background:var(--blue);color:#fff">Export CSV</button>
   </div>`;
   html += `<table>
     <thead><tr><th>Retailer</th><th>Week date</th><th>Order date</th><th>Delivery date</th><th>SKU</th><th class="right">Units</th><th class="right">Pallets</th><th>Last updated</th></tr></thead>
@@ -1365,6 +1405,25 @@ function renderAuditForecasts(){
     AUDIT_STATE.fc = {retailer:'', sku:'', week:'', month:'', q:''};
     retEl.value=''; skuEl.value=''; weekEl.value=''; monthEl.value=''; qEl.value='';
     paint();
+  });
+  document.getElementById('fcFilCsv').addEventListener('click', () => {
+    const rows = applyFilters().sort((a,b) =>
+      (a.week_date||'').localeCompare(b.week_date||'') ||
+      (a.retailer||'').localeCompare(b.retailer||'') ||
+      (a.sku||'').localeCompare(b.sku||'')
+    ).map(r => [
+      r.retailer||'',
+      r.week_date||'',
+      r.order_date||'',
+      r.delivery_date||'',
+      r.sku||'',
+      Number(r.units)||0,
+      Number(r.pallets)||0,
+      r._units_derived ? 'pallets' : 'source',
+      r.updated_at||'',
+    ]);
+    downloadCSV(`abh_forecasts_${isoDate(new Date())}.csv`,
+      ['Retailer','Week date','Order date','Delivery date','SKU','Units','Pallets','Units source','Last updated'], rows);
   });
   paint();
 }
