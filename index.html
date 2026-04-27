@@ -184,79 +184,76 @@
 
   <nav class="tabs" id="tabs">
     <button class="tab active" data-tab="summary">Summary</button>
-    <button class="tab" data-tab="heatmap">14-day Heatmap</button>
-    <button class="tab" data-tab="orders">Orders</button>
-    <button class="tab" data-tab="forecast">4-week Forecast</button>
-    <button class="tab" data-tab="recon">Reconciliation</button>
+    <button class="tab" data-tab="audit">Audit (every line)</button>
     <button class="tab" data-tab="help">How to read</button>
   </nav>
 
-  <!-- SUMMARY TAB -->
+  <!-- SUMMARY TAB — closing stock heatmap + overdue. Nothing else. -->
   <section class="tab-pane active" id="pane-summary">
-    <h2>At-risk by customer <span class="count" id="byCustomerCount"></span></h2>
-    <div class="h2-sub">Open SO lines that won't ship in full, grouped by customer and sorted by priority (Woolworths → Coles → Metcash → Amazon → Other). One-click email draft for each customer.</div>
-    <div class="panel" id="byCustomerPanel"></div>
-
-    <h2>Recommended actions</h2>
-    <div class="h2-sub">Concrete next moves per at-risk SKU. Specific options the production scheduler or sales team can act on today.</div>
-    <div class="panel" id="actionsPanel"></div>
-  </section>
-
-  <!-- HEATMAP TAB -->
-  <section class="tab-pane" id="pane-heatmap">
-    <h2>Stock-on-hand heatmap (start of day)</h2>
-    <div class="h2-sub">For each SKU on each day, the units of finished goods physically available at the start of that day. Walks forward from today's NetSuite stock, adding planned production and subtracting that day's shipments. Stock never goes below zero; any unshippable demand carries forward to the next day. <span class="lg-green">Green</span> = stock + that day's production covers shipments comfortably. <span class="lg-amber">Amber</span> = covers exactly, no buffer. <span class="lg-red">Red</span> = shortfall, can't ship in full. <span class="lg-grey">Grey</span> = no demand that day. Hover for the full breakdown.</div>
+    <h2>Closing stock heatmap (end of day, 14 days forward)</h2>
+    <div class="h2-sub">For each SKU on each day, the units physically available at the END of that day after shipments leave and production lands. Walks forward from today's NetSuite stock. Stock never goes below zero; if demand exceeds supply on a day, the unshippable portion carries forward to the next day. <span class="lg-green">Green</span> = closing stock comfortably positive · <span class="lg-amber">amber</span> = positive but tight, less than 1.5 days of next-day demand · <span class="lg-red">red</span> = shortfall on that day (couldn't ship in full) · <span class="lg-grey">grey</span> = no demand that day. Hover any cell for the full breakdown including SOD, production, shipments, shortfall.</div>
     <div class="panel" id="heatmapPanel"></div>
 
-    <h2>Shipments-out heatmap (orders + forecast leaving stock each day)</h2>
-    <div class="h2-sub">Same SKU rows and dates, but each cell shows how many units are scheduled to leave stock that day. WW + Coles forecasts use their <i>order_date</i>. Metcash spreads across workdays (no order_date). Confirmed open SOs sit on their <i>ship_date</i>. Per-day = MAX(forecast, SOs) so a confirmed SO doesn't double-count against the same forecasted volume. Cell colour reflects whether that day's shipment is comfortable, tight, or unshippable from same-day production + stock buffer.</div>
-    <div class="panel" id="demandPanel"></div>
-
-    <h2>Calculation transparency, where every number comes from</h2>
-    <div class="h2-sub">For each SKU, day-by-day walk: SOD stock → +Production → −Demand → EOD stock. Every cell on every other section traces back to these rows.</div>
-    <div class="panel" id="calcPanel"></div>
-  </section>
-
-  <!-- ORDERS TAB -->
-  <section class="tab-pane" id="pane-orders">
     <h2>Overdue dispatches <span class="count" id="overdueCount"></span></h2>
-    <div class="h2-sub">SOs whose ship_date is past today and have not yet shipped. These need to leave the warehouse first, before any forward-week orders.</div>
+    <div class="h2-sub">SOs whose ship_date is past today and have not yet shipped. These ship first, before any forward-week orders. Click any SO number to view in NetSuite.</div>
     <div class="panel" id="overduePanel"></div>
-
-    <h2>At-risk orders, today through today + 14 days <span class="count" id="atriskCount"></span></h2>
-    <div class="h2-sub">Per-line view of every SO that won't ship from current stock + planned production. Walks each SKU forward day-by-day. Click any SO number to view in NetSuite.</div>
-    <div class="panel" id="atriskPanel"></div>
   </section>
 
-  <!-- FORECAST TAB -->
-  <section class="tab-pane" id="pane-forecast">
-    <h2>4-week forecast vs supply per SKU</h2>
-    <div class="h2-sub">Looking 4 weeks ahead. For each week, demand = MAX(retailer forecast for the week, confirmed SOs in the week). Supply = current stock + cumulative production through that week, less SOs that ship before then. Negative = need to build stock or defer.</div>
-    <div class="panel" id="nextweekPanel"></div>
-  </section>
+  <!-- AUDIT TAB — 100% data trace, line-by-line every input. -->
+  <section class="tab-pane" id="pane-audit">
+    <h2>Audit, every input on this planner</h2>
+    <div class="h2-sub">Every line of every data source the planner uses. If a number is on the Summary tab, you can find the underlying row here. Click any source link to open the same data in NetSuite for line-by-line cross-check.</div>
 
-  <!-- RECONCILIATION TAB -->
-  <section class="tab-pane" id="pane-recon">
-    <h2>Reconciliation to NetSuite</h2>
-    <div class="h2-sub">Every Supabase total tied back to its NetSuite source with click-through links. Stock goes to NS Report 752; open SOs go to saved search 6137.</div>
+    <h2>1. Production assumptions per SKU</h2>
+    <div class="h2-sub">The exact daily production rate the heatmap uses for each SKU. Source documented per row. Change any rate by editing the constants in the page source — currently hardcoded to make rate changes deliberate, not silent.</div>
+    <div class="panel" id="auditRatesPanel"></div>
+
+    <h2>2. Public holidays loaded</h2>
+    <div class="h2-sub">Every date treated as zero-production. Source: Supabase <code>public_holidays</code> table (same source as the existing planner).</div>
+    <div class="panel" id="auditPHPanel"></div>
+
+    <h2>3. Stock on hand from NetSuite Report 752</h2>
+    <div class="h2-sub">Every Pureau SKU stock row in Supabase. Click to open Report 752 in NS.</div>
+    <div class="panel" id="auditStockPanel"></div>
+
+    <h2>4. Open Sales Order lines from NetSuite (saved search 6137)</h2>
+    <div class="h2-sub">Every line on every open Pureau Pending Fulfillment SO, ABH subsidiary 2. Sortable. Click any SO# to open in NS. Sum at the bottom.</div>
+    <div class="panel" id="auditSOPanel"></div>
+
+    <h2>5. Woolworths forecast (every line)</h2>
+    <div class="panel" id="auditWWPanel"></div>
+
+    <h2>6. Coles forecast (every line)</h2>
+    <div class="panel" id="auditColesPanel"></div>
+
+    <h2>7. Metcash forecast (every line — pallets converted to units via SKU UPP)</h2>
+    <div class="panel" id="auditMetcashPanel"></div>
+
+    <h2>8. Day-by-day calculation per SKU</h2>
+    <div class="h2-sub">SOD stock → +Production → −Shipments → EOD stock. The entire heatmap derives from these rows.</div>
+    <div class="panel" id="calcPanel"></div>
+
+    <h2>9. Reconciliation totals to NetSuite</h2>
     <div class="panel" id="reconPanel"></div>
 
-    <h2>Data freshness</h2>
-    <div class="h2-sub">When was each data source last refreshed. Stock + open SOs sync hourly from NS. Retailer forecasts arrive by email and parse into Supabase. Stale forecast = retailer hasn't sent in a while.</div>
+    <h2>10. Data freshness</h2>
     <div class="panel"><div class="fresh-grid" id="freshGrid"></div></div>
   </section>
 
   <!-- HELP TAB -->
   <section class="tab-pane" id="pane-help">
     <div class="howto-body">
-      <p><b>Who it's for:</b> Pureau fulfilment + sales teams. Answers a single question — over the next 14 days, will every order ship in full?</p>
-      <p><b>Production assumption:</b> 10L Cask = 11,520 units/day weekday (120 pallets at 96 UPP, target across HMPS + Line A). 5L Cask = 0 (Line B out 13/04 to 13/06). 2L = 1,670/day; 600ml 12pk = 2,948; 600ml 6pk = 4,120 — all from W14-W17 NS Build 4-week average. Saturday = half rate for cask SKUs only; bottle lines weekday-only. Sundays + public holidays = 0.</p>
-      <p><b>Demand sources:</b> WW + Coles forecasts use the <i>order_date</i> from each forecast row (their actual dispatch date). Metcash forecasts have no order_date so spread across workdays of the week. Confirmed open SOs sit on their <i>ship_date</i>. Per-day demand = MAX(forecast on that day, SOs on that day) to avoid double-counting where an SO confirms a forecasted volume. If a forecast or SO falls on a public holiday or weekend, it shifts forward to the next workday (we can't dispatch).</p>
-      <p><b>Heatmap cells:</b> top number = start-of-day stock (real, never goes below zero). Small "↓N" underneath = total shipments leaving stock that day. If demand exceeds supply, cell shows "↓demand (−short)" and the unshipped portion carries forward as extra demand the next day.</p>
-      <p><b>Cell colours:</b> <span class="lg-green">green</span> stock + production covers demand with buffer · <span class="lg-amber">amber</span> covers exactly, no buffer · <span class="lg-red">red</span> shortfall, can't ship in full · <span class="lg-grey">grey</span> no demand that day.</p>
-      <p><b>Reconciliation:</b> every figure on this page can be traced. Click any SO number to open the source in NetSuite. The Reconciliation tab ties Supabase totals back to NS Report 752 and saved search 6137.</p>
-      <p><b>Refresh:</b> page auto-refreshes every 5 minutes from Supabase. Underlying NS sync runs hourly Mon-Fri 06:00-20:00 + 3x Saturday.</p>
-      <p><b>Tab navigation:</b> click any tab above to jump to that view. Tabs are independent — switching tabs doesn't reload data.</p>
+      <p><b>Who it's for:</b> Pureau fulfilment + sales teams.</p>
+      <p><b>Single question this answers:</b> over the next 14 days, what will the stock-on-hand look like at end of each day, and which dispatches are at risk?</p>
+      <p><b>Two views you actually need:</b></p>
+      <ul>
+        <li><b>Closing stock heatmap</b> — the at-a-glance view. Each cell = end-of-day stock per SKU per day. Red = shortfall, can't ship that day in full.</li>
+        <li><b>Overdue dispatches</b> — orders that should have shipped already. These ship first.</li>
+      </ul>
+      <p><b>Audit tab:</b> 100% line-by-line. Every forecast row, every SO line, every public holiday, every production assumption. If a number is in the heatmap, you can trace it from the audit tab back to the NetSuite source.</p>
+      <p><b>Production assumption:</b> 10L Cask = 11,520 units/day weekday (120 pal × 96 UPP, target across HMPS + Line A). 5L Cask = 1,884 units/day weekday (Line A alternates with 10L during Line B outage 13/04-13/06). 2L = 1,670; 600ml 12pk = 2,948; 600ml 6pk = 4,120 — W14-W17 NS Build actual averages. Saturday = half weekday rate for cask SKUs only; bottle lines weekday-only. Sundays + public holidays = 0.</p>
+      <p><b>Demand sources:</b> WW + Coles forecasts use <i>order_date</i> per row (their actual dispatch date). Metcash spreads across workdays (no order_date). Confirmed open SOs sit on their ship_date. Per-day = MAX(forecast on that day, SOs on that day) to avoid double-count. Anything falling on PH/weekend shifts to next workday.</p>
+      <p><b>Refresh:</b> page auto-refreshes every 5 minutes. NS sync runs hourly Mon-Fri 06:00-20:00 + 3x Saturday.</p>
     </div>
   </section>
 </main>
@@ -625,25 +622,20 @@ function render(){
   }
   nwPanel.innerHTML = nwHtml;
 
-  // The single most important view: per-SKU snapshot — status + immediate action
-  renderSnapshot();
-
-  // Critical alerts (persistent state)
-  renderCritical();
-
-  // At-risk grouped by customer + recommended actions
-  renderByCustomer(atRisk, overdue);
-  renderActions(atRisk, overdue, nextWeekRows);
-
-  // Stock heatmap (14-day, start-of-day stock walking forward)
+  // SUMMARY tab: closing stock heatmap walking forward
   renderHeatmap();
-  // Shipments-out heatmap (units leaving stock each day, parallel layout)
-  renderDemand();
 
-  // Calculation transparency
+  // Note: renderUnfulfillable already populated the overdue table
+
+  // AUDIT tab: every input traceable line by line
+  renderAuditRates();
+  renderAuditPH();
+  renderAuditStock();
+  renderAuditSO();
+  renderAuditForecasts();
+
+  // Day-by-day SKU walk + recon (still used in Audit tab)
   renderCalc();
-
-  // Reconciliation to NetSuite
   renderRecon();
 
   // Freshness
@@ -1125,6 +1117,97 @@ function renderHeatmap(){
     <span><i style="background:var(--blue)"></i>Today</span>
   </div>`;
   document.getElementById('heatmapPanel').innerHTML = html;
+}
+
+// AUDIT panel renders — every input visible line by line
+function renderAuditRates(){
+  let html = '<table><thead><tr><th>SKU</th><th class="right">Weekday rate (units)</th><th class="right">Weekday rate (pal)</th><th class="right">Saturday rate (units)</th><th>Source</th></tr></thead><tbody>';
+  SKUS.forEach(sku => {
+    const wk = ACTUAL_RATE_UNITS_PER_WEEKDAY[sku] || 0;
+    const sat = SATURDAY_RATE_UNITS[sku] || 0;
+    const upp = UPP[sku] || 1;
+    let source;
+    if(sku === '10L Cask') source = "Rob target 27/04: 120 pal/day across HMPS + Line A";
+    else if(sku === '5L Cask') source = "W14-W17 NS Build avg (Line A alternates 10L/5L during Line B outage)";
+    else source = "W14-W17 NS Build 4-week average from " + RATE_SOURCE_NOTE.split('. ')[2];
+    html += `<tr><td class="sku">${sku}</td><td class="right">${fmt(wk)}</td><td class="right">${(wk/upp).toFixed(0)}</td><td class="right">${fmt(sat)}</td><td>${source}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('auditRatesPanel').innerHTML = html;
+}
+
+function renderAuditPH(){
+  const ph = [...PUBLIC_HOLIDAYS].sort();
+  if(ph.length === 0){ document.getElementById('auditPHPanel').innerHTML = '<div class="panel-empty">No public holidays loaded.</div>'; return; }
+  let html = '<table><thead><tr><th>Date</th><th>Day of week</th></tr></thead><tbody>';
+  ph.forEach(d => {
+    const dt = new Date(d.slice(0,10) + 'T00:00:00');
+    const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()];
+    html += `<tr><td>${d}</td><td>${dow}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('auditPHPanel').innerHTML = html;
+}
+
+function renderAuditStock(){
+  let html = `<div class="panel-subhead">Stock on hand <a href="${NS_REPORT_STOCK}" target="_blank">View NS Report 752</a></div>`;
+  html += '<table><thead><tr><th>SKU</th><th class="right">Units</th><th class="right">Pallets</th><th>Last sync</th></tr></thead><tbody>';
+  let totU = 0, totP = 0;
+  SKUS.forEach(s => {
+    const r = DATA.stock.find(x => x.sku === s);
+    const u = r ? Number(r.units)||0 : 0;
+    const p = r ? Number(r.pallets)||0 : 0;
+    totU += u; totP += p;
+    html += `<tr><td class="sku">${s}</td><td class="right">${fmt(u)}</td><td class="right">${p.toFixed(1)}</td><td>${r?.updated_at ? new Date(r.updated_at).toLocaleString('en-AU') : '—'}</td></tr>`;
+  });
+  html += `</tbody><tfoot><tr><td>TOTAL</td><td class="right">${fmt(totU)}</td><td class="right">${totP.toFixed(1)}</td><td></td></tr></tfoot></table>`;
+  document.getElementById('auditStockPanel').innerHTML = html;
+}
+
+function renderAuditSO(){
+  const lines = [...DATA.orders].sort((a,b) => (a.ship_date||'').localeCompare(b.ship_date||'') || (a.doc_num||'').localeCompare(b.doc_num||''));
+  let html = `<div class="panel-subhead">Open SO lines (subsidiary 2, status Pending Fulfillment, Pureau items only) <a href="${NS_SAVED_SEARCH_OPEN_SOS}" target="_blank">View NS saved search 6137</a></div>`;
+  if(lines.length === 0){ html += '<div class="panel-empty">No open SO lines.</div>'; document.getElementById('auditSOPanel').innerHTML = html; return; }
+  html += '<table><thead><tr><th>Ship date</th><th>SO #</th><th>Customer</th><th>SKU</th><th class="right">Units</th><th>Status</th></tr></thead><tbody>';
+  let totUnits = 0;
+  lines.forEach(l => {
+    const cust = (l.customer||'').split(':').pop().trim().slice(0, 70);
+    totUnits += Number(l.units_ordered)||0;
+    html += `<tr>
+      <td>${l.ship_date || '—'}</td>
+      <td class="so"><a href="${NS_TRAN_SEARCH(l.doc_num)}" target="_blank" style="color:var(--blue);text-decoration:none">${l.doc_num||'—'}</a></td>
+      <td>${cust}</td>
+      <td class="sku">${l.sku}</td>
+      <td class="right">${fmt(l.units_ordered)}</td>
+      <td>${l.status || '—'}</td>
+    </tr>`;
+  });
+  html += `</tbody><tfoot><tr><td colspan="4">TOTAL ${lines.length} lines</td><td class="right">${fmt(totUnits)}</td><td></td></tr></tfoot></table>`;
+  document.getElementById('auditSOPanel').innerHTML = html;
+}
+
+function renderAuditForecasts(){
+  function buildTable(rows, hasOrderDate, hasDelivery){
+    if(rows.length === 0) return '<div class="panel-empty">No forecast rows.</div>';
+    const sorted = [...rows].sort((a,b) => (a.week_date||'').localeCompare(b.week_date||'') || (a.sku||'').localeCompare(b.sku||''));
+    let h = '<table><thead><tr><th>Week date</th>';
+    if(hasOrderDate) h += '<th>Order date (dispatch)</th>';
+    if(hasDelivery) h += '<th>Delivery date</th>';
+    h += '<th>SKU</th><th class="right">Units</th><th class="right">Pallets</th><th>Last updated</th></tr></thead><tbody>';
+    let totU = 0, totP = 0;
+    sorted.forEach(r => {
+      totU += Number(r.units)||0; totP += Number(r.pallets)||0;
+      h += '<tr><td>' + (r.week_date||'—') + '</td>';
+      if(hasOrderDate) h += '<td>' + (r.order_date||'—') + '</td>';
+      if(hasDelivery) h += '<td>' + (r.delivery_date||'—') + '</td>';
+      h += `<td class="sku">${r.sku}</td><td class="right">${fmt(r.units)}${r._units_derived ? ' <small style="color:#999">(from pallets)</small>' : ''}</td><td class="right">${(Number(r.pallets)||0).toFixed(1)}</td><td>${r.updated_at ? new Date(r.updated_at).toLocaleDateString('en-AU') : '—'}</td></tr>`;
+    });
+    h += `</tbody><tfoot><tr><td colspan="${hasOrderDate?(hasDelivery?4:3):2}">TOTAL ${sorted.length} rows</td><td class="right">${fmt(totU)}</td><td class="right">${totP.toFixed(1)}</td><td></td></tr></tfoot></table>`;
+    return h;
+  }
+  document.getElementById('auditWWPanel').innerHTML = buildTable(DATA.forecasts.ww, true, true);
+  document.getElementById('auditColesPanel').innerHTML = buildTable(DATA.forecasts.coles, true, false);
+  document.getElementById('auditMetcashPanel').innerHTML = buildTable(DATA.forecasts.metcash, false, false);
 }
 
 // Calculation transparency: for each SKU show stock + daily production assumption + demand sources
