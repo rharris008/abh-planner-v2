@@ -156,16 +156,17 @@
   <h2>Days of cover</h2>
   <div class="cover-grid" id="coverGrid"></div>
 
-  <h2>14-day stock projection (start of day)</h2>
+  <h2>14-day delivery feasibility</h2>
   <div class="heatmap">
     <table class="heat" id="heatTable"></table>
     <div class="legend">
-      <span><i style="background:var(--green)"></i>Cover &gt;= 7 days</span>
-      <span><i style="background:var(--amber)"></i>3-7 days</span>
-      <span><i style="background:var(--red)"></i>&lt; 3 days or projected stockout</span>
+      <span><i style="background:var(--green)"></i>Can ship in full + buffer</span>
+      <span><i style="background:var(--amber)"></i>Can ship but tight (no buffer)</span>
+      <span><i style="background:var(--red)"></i>Shortfall, cannot ship in full</span>
       <span><i style="background:#E5E5E5"></i>No demand</span>
       <span><i style="background:var(--blue)"></i>Today</span>
     </div>
+    <div style="font-size:11px;color:#888;margin-top:6px">Cell shows units short for the day if any, otherwise start-of-day stock. Hover for the full breakdown (SOD, demand, production, EOD).</div>
   </div>
 
   <div id="drilldown" class="drilldown">
@@ -339,17 +340,19 @@ function projectStock(stockToday, dailyDemand, days, dailyProduction){
   return out;
 }
 
-function classifyDay(stockEod, demandFromHere, daysFromNow){
-  if(stockEod < 0) return 'red';
-  if(demandFromHere === 0 && stockEod >= 0) return 'grey';
-  // Days of cover from this point: how many days until stock hits zero
-  // Simplified: if stockEod / avg daily demand < 3 -> red, < 7 -> amber, else green
-  const avgDaily = demandFromHere / Math.max(1, daysFromNow);
-  if(avgDaily <= 0) return 'green';
-  const cover = stockEod / avgDaily;
-  if(cover < 3) return 'red';
-  if(cover < 7) return 'amber';
-  return 'green';
+function classifyDeliveryDay(p){
+  // p has: sod, demand, production, eod
+  // Can we ship today's demand from start-of-day stock + today's production?
+  if(p.demand === 0) return {cls: 'grey', shortfall: 0};
+  const supply = p.sod + p.production;
+  if(supply < p.demand){
+    return {cls: 'red', shortfall: p.demand - supply};
+  }
+  // Buffer: supply must exceed demand by at least 20% to be GREEN, else AMBER (tight)
+  if(supply < p.demand * 1.2){
+    return {cls: 'amber', shortfall: 0};
+  }
+  return {cls: 'green', shortfall: 0};
 }
 
 function daysOfCoverWithProduction(stockNow, dailyDemand, dailyProd, days){
@@ -553,15 +556,14 @@ function renderHeatmap(skuProj){
   SKUS.forEach(sku => {
     const proj = skuProj[sku].projection;
     body += `<tr><td class="sku-name">${sku}</td>`;
-    proj.forEach((p, idx) => {
-      // Compute remaining demand from this day to end of horizon
-      let demandFromHere = 0;
-      for(let i=idx; i<proj.length; i++) demandFromHere += proj[i].demand;
-      const cls = classifyDay(p.eod, demandFromHere, proj.length - idx);
+    proj.forEach((p) => {
+      const {cls, shortfall} = classifyDeliveryDay(p);
       const we = isWeekend(p.date);
       const cellCls = we ? cls + ' weekend' : cls;
-      const tip = `${sku} ${fmtDate(p.date)}\nStart-of-day: ${fmtNum(p.sod)}\nThat day's demand: ${fmtNum(p.demand)}\nEnd-of-day: ${fmtNum(p.eod)}`;
-      body += `<td class="day ${cellCls}" title="${tip}" onclick="drillInto('${sku}')">${fmtNum(p.sod)}</td>`;
+      const tip = `${sku} ${fmtDate(p.date)}\nStart-of-day stock: ${fmtNum(p.sod)}\nDemand: ${fmtNum(p.demand)}\nProduction: ${fmtNum(p.production)}\nEnd-of-day stock: ${fmtNum(p.eod)}` +
+                  (shortfall > 0 ? `\nSHORTFALL: ${fmtNum(shortfall)} units cannot ship` : '');
+      const display = shortfall > 0 ? `−${fmtNum(shortfall)}` : (cls === 'grey' ? '·' : fmtNum(p.sod));
+      body += `<td class="day ${cellCls}" title="${tip}" onclick="drillInto('${sku}')">${display}</td>`;
     });
     body += '</tr>';
   });
