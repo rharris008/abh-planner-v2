@@ -72,12 +72,14 @@
   .act-options{margin-top:6px}
   .act-options li{margin:2px 0}
 
-  /* Stock heatmap */
+  /* Stock heatmap, fixed table layout so headers align with body cells */
   .heatmap-wrap{padding:14px;overflow-x:auto}
-  table.heat{border-collapse:collapse;font-size:11px;min-width:100%}
-  table.heat th,table.heat td{border:1px solid #E5E5E5;padding:6px 5px;text-align:center;min-width:48px}
+  table.heat{border-collapse:collapse;font-size:11px;table-layout:fixed;width:max-content;min-width:100%}
+  table.heat col.skucol{width:140px}
+  table.heat col.daycol{width:62px}
+  table.heat th,table.heat td{border:1px solid #E5E5E5;padding:6px 4px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   table.heat th{background:var(--navy);color:#fff;font-weight:bold;font-size:10px}
-  table.heat th.skucol{text-align:left;padding-left:10px;width:120px;min-width:120px}
+  table.heat th.skucol{text-align:left;padding-left:10px}
   table.heat td.skuname{text-align:left;padding-left:10px;font-weight:bold;color:var(--navy);background:var(--ltgrey)}
   table.heat td.cell{cursor:default;font-weight:bold;color:#fff}
   table.heat td.cell.green{background:var(--green)}
@@ -146,6 +148,9 @@
   <h2>4-week forecast vs supply per SKU</h2>
   <div class="panel" id="nextweekPanel"></div>
 
+  <h2>Calculation transparency, where every number comes from</h2>
+  <div class="panel" id="calcPanel"></div>
+
   <h2>Reconciliation to NetSuite</h2>
   <div class="panel" id="reconPanel"></div>
 
@@ -167,29 +172,32 @@ const NS_SAVED_SEARCH_OPEN_SOS = NS_BASE + '/app/common/search/searchresults.nl?
 const NS_REPORT_STOCK = NS_BASE + '/app/reporting/reportrunner.nl?reportid=752';
 const NS_TRAN_SEARCH = (tranid) => NS_BASE + '/app/common/search/global.nl?text=' + encodeURIComponent(tranid) + '&type=Transaction';
 
-// ── AUTHORITATIVE CONSTANTS (source: existing planner.abhgroup.com.au) ──
+// ── AUTHORITATIVE CONSTANTS ──
 const SKUS = ['10L Cask','5L Cask','2L Bottle','600ml 12pk','600ml 6pk'];
 const UPP = {'10L Cask':96,'5L Cask':60,'2L Bottle':64,'600ml 12pk':126,'600ml 6pk':252};
-const PLAN_TARGETS = {
-  'Line A':         {'10L Cask': 40},
-  'Line B':         {'5L Cask': 35, '10L Cask': 40},
-  'SM Bottle line': {'2L Bottle': 52},
-  'HMPS - Dual':    {'10L Cask': 80},
-  'HMPS - Single':  {'10L Cask': 40},
-  'EP new line':    {'600ml 12pk': 34, '600ml 6pk': 32},
+
+// Actual production run rates per weekday, derived from NS Build records W14-W17 (28 Mar - 24 Apr 2026, 4 weeks).
+// These are REAL operating rates, not theoretical line capacity. Source: SuiteQL on transaction.Build.
+const ACTUAL_RATE_UNITS_PER_WEEKDAY = {
+  '10L Cask':   15429,  // 161 pal/day average (range 114 to 196 across W14-W17)
+  '5L Cask':     1884,  // 31 pal/day, suppressed by shed move Line B outage
+  '2L Bottle':   1670,  // 26 pal/day
+  '600ml 12pk':  2948,  // 23 pal/day
+  '600ml 6pk':   4120,  // 16 pal/day
 };
-const SKU_LINES = {
-  '10L Cask':   ['HMPS - Dual', 'Line A', 'Line B'],
-  '5L Cask':    ['Line B'],
-  '2L Bottle':  ['SM Bottle line'],
-  '600ml 12pk': ['EP new line'],
-  '600ml 6pk':  ['EP new line'],
+// Saturday production runs at half weekday rate (single shift on HMPS + Line A only for Cask SKUs;
+// SM Bottle and EP New Line do not run Saturday by default per the existing planner).
+const SATURDAY_RATE_UNITS = {
+  '10L Cask':    Math.round(ACTUAL_RATE_UNITS_PER_WEEKDAY['10L Cask'] / 2),  // ~7,715
+  '5L Cask':     Math.round(ACTUAL_RATE_UNITS_PER_WEEKDAY['5L Cask'] / 2),
+  '2L Bottle':   0,
+  '600ml 12pk':  0,
+  '600ml 6pk':   0,
 };
-const SATURDAY_LINES = new Set(['HMPS - Dual','HMPS - Single','Line A','Line B']);
+const RATE_SOURCE_NOTE = 'NS Build records, W14-W17 (28 Mar to 24 Apr 2026, 4 weeks, 20 weekdays)';
+
 const LINE_B_OUTAGE_START = '2026-04-13';
 const LINE_B_OUTAGE_END   = '2026-06-13';
-const SHIFTS_WEEKDAY = 2;
-const SHIFTS_SATURDAY = 1;
 
 let PUBLIC_HOLIDAYS = new Set();
 const HORIZON_DAYS = 14;
@@ -221,21 +229,20 @@ async function sbGet(path){
   return r.json();
 }
 
+// Daily production capacity (units) for a SKU on a given Date.
+// Uses ACTUAL run rates from NS Build records (4-week historical avg), NOT theoretical PLAN_TARGETS.
+// Sunday + public holiday = 0. Saturday = SATURDAY_RATE (half weekday for cask SKUs, 0 for bottle lines).
+// During Line B outage, 5L Cask production = 0.
 function dailyCapacity(sku, dateObj){
   const iso = isoDate(dateObj);
   const dow = dateObj.getDay();
   if(dow === 0) return 0;
   if(PUBLIC_HOLIDAYS.has(iso)) return 0;
-  const isSaturday = (dow === 6);
   const inOutage = iso >= LINE_B_OUTAGE_START && iso <= LINE_B_OUTAGE_END;
-  let palShift = 0;
-  (SKU_LINES[sku] || []).forEach(line => {
-    if(line === 'Line B' && inOutage) return;
-    if(isSaturday && !SATURDAY_LINES.has(line)) return;
-    const tgt = (PLAN_TARGETS[line] || {})[sku];
-    if(tgt) palShift += tgt;
-  });
-  return Math.round(palShift * (isSaturday ? SHIFTS_SATURDAY : SHIFTS_WEEKDAY) * (UPP[sku]||1));
+  // 5L Cask production is from Line B only; during outage, zero.
+  if(sku === '5L Cask' && inOutage) return 0;
+  if(dow === 6) return SATURDAY_RATE_UNITS[sku] || 0;
+  return ACTUAL_RATE_UNITS_PER_WEEKDAY[sku] || 0;
 }
 
 function reasonForShortfall(sku, shipDateIso){
@@ -505,6 +512,9 @@ function render(){
   // Stock-on-hand heatmap (14-day, start of day)
   renderHeatmap();
 
+  // Calculation transparency
+  renderCalc();
+
   // Reconciliation to NetSuite
   renderRecon();
 
@@ -772,7 +782,12 @@ function renderHeatmap(){
     days.push(d);
   }
 
-  let html = '<div class="heatmap-wrap"><table class="heat"><thead><tr><th class="skucol">SKU</th>';
+  let html = '<div class="heatmap-wrap"><table class="heat">';
+  // Colgroup so every column has the same fixed width (alignment fix)
+  html += '<colgroup><col class="skucol">';
+  days.forEach(() => { html += '<col class="daycol">'; });
+  html += '</colgroup>';
+  html += '<thead><tr><th class="skucol">SKU</th>';
   days.forEach(d => {
     const cls = (isoDate(d) === todayIso) ? 'today' : (d.getDay()===0||d.getDay()===6 ? 'weekend' : '');
     html += `<th class="${cls}">${fmtDate(d)}</th>`;
@@ -809,6 +824,65 @@ function renderHeatmap(){
     <span><i style="background:var(--blue)"></i>Today</span>
   </div>`;
   document.getElementById('heatmapPanel').innerHTML = html;
+}
+
+// Calculation transparency: for each SKU show stock + daily production assumption + demand sources
+// + day-by-day projection, all sourced.
+function renderCalc(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todayIso = isoDate(today);
+  const days = [];
+  for(let i=0; i<HORIZON_DAYS; i++){ const d = new Date(today); d.setDate(today.getDate()+i); days.push(d); }
+
+  let html = `<div style="padding:10px 14px;font-size:11px;color:#666;border-bottom:1px solid var(--ltgrey)">
+    Every projected stock figure on this page is derived from these inputs. <b>Production assumption:</b> ${RATE_SOURCE_NOTE} — actual run rates, not theoretical max. <b>Demand:</b> for each Mon-Sun week, MAX(retailer forecasts, confirmed open SOs); past-due SOs lump onto today.
+  </div>`;
+
+  // Per-SKU daily walk
+  SKUS.forEach(sku => {
+    const stockNow = getStockFor(sku);
+    const dailyDemand = buildDailyDemand(sku, days);
+
+    let totalProd = 0, totalDemand = 0;
+    let sod = stockNow;
+    const rows = days.map(d => {
+      const prod = (isoDate(d) === todayIso) ? 0 : dailyCapacity(sku, d);
+      const dem = dailyDemand[isoDate(d)] || 0;
+      const eod = sod + prod - dem;
+      totalProd += prod; totalDemand += dem;
+      const r = {date: d, sod, prod, dem, eod};
+      sod = eod;
+      return r;
+    });
+
+    const rateWk = ACTUAL_RATE_UNITS_PER_WEEKDAY[sku] || 0;
+    const rateSat = SATURDAY_RATE_UNITS[sku] || 0;
+    const inOutage = sku === '5L Cask' ? `<b style="color:var(--red)">During Line B outage 13/04-13/06: 0 units/day</b>` : '';
+
+    html += `<div style="padding:14px 14px 6px;border-top:1px solid var(--ltgrey)">
+      <div style="font-size:14px;font-weight:bold;color:var(--navy);margin-bottom:6px">${sku}</div>
+      <div style="font-size:11px;color:#555;line-height:1.6">
+        <b>Stock today:</b> ${fmt(stockNow)} units (${(stockNow/(UPP[sku]||1)).toFixed(1)} pal). Source: <a href="${NS_REPORT_STOCK}" target="_blank" style="color:var(--blue)">NS Report 752</a>, sync'd ${getStockUpdated() ? new Date(getStockUpdated()).toLocaleString('en-AU') : '—'}.<br>
+        <b>Production assumption:</b> ${fmt(rateWk)} units/weekday (${(rateWk/(UPP[sku]||1)).toFixed(0)} pal/day) · ${fmt(rateSat)} units/Saturday · 0 Sun/PH. ${inOutage ? '<br>' + inOutage : ''}<br>
+        <b>14-day totals:</b> projected production ${fmt(totalProd)} · projected demand ${fmt(totalDemand)} · ending stock ${fmt(rows[rows.length-1].eod)}
+      </div>`;
+    html += '<table style="margin-top:8px;font-size:11px"><thead><tr><th>Day</th><th class="right">SOD stock</th><th class="right">+ Production</th><th class="right">- Demand</th><th class="right">EOD stock</th></tr></thead><tbody>';
+    rows.forEach(r => {
+      const we = (r.date.getDay()===0||r.date.getDay()===6) ? 'background:#F8F8F8;color:#888' : '';
+      const isToday = (isoDate(r.date) === todayIso);
+      const todayMark = isToday ? 'background:#EAF6FF;font-weight:bold' : '';
+      html += `<tr style="${we}${todayMark}">
+        <td>${fmtDateLong(r.date)}${isToday?' (today)':''}</td>
+        <td class="right">${fmt(r.sod)}</td>
+        <td class="right" style="color:var(--green)">${r.prod ? '+' + fmt(r.prod) : '—'}</td>
+        <td class="right" style="color:var(--red)">${r.dem ? '−' + fmt(r.dem) : '—'}</td>
+        <td class="right" style="font-weight:bold;color:${r.eod<0?'var(--red)':'var(--navy)'}">${fmt(r.eod)}</td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+  });
+
+  document.getElementById('calcPanel').innerHTML = html;
 }
 
 function renderRecon(){
