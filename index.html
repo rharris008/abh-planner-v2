@@ -80,6 +80,63 @@
   .legend i{width:12px;height:12px;border-radius:2px;display:inline-block}
 
   footer{padding:18px 20px;font-size:11px;color:#999;text-align:center;border-top:1px solid #E5E5E5;margin-top:30px}
+
+  /* Section cards (unfulfillable, capacity, whatif, forecast, actions) */
+  .section-card{background:#fff;border-radius:4px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.06);overflow-x:auto}
+  .section-empty{color:#888;font-size:12px;padding:14px 0;text-align:center}
+
+  /* Unfulfillable list rows */
+  .unful-row{display:grid;grid-template-columns:90px 1fr 110px 100px 100px;gap:8px;padding:8px 10px;border-left:4px solid var(--red);background:#FFF5F5;border-radius:3px;margin-bottom:6px;font-size:12px;align-items:center}
+  .unful-sku{font-weight:bold;color:var(--navy)}
+  .unful-cust{color:#444}
+  .unful-date{color:#666}
+  .unful-qty{text-align:right;font-weight:bold;color:var(--red)}
+  .unful-short{text-align:right;font-weight:bold;color:var(--red)}
+  .unful-headers{display:grid;grid-template-columns:90px 1fr 110px 100px 100px;gap:8px;padding:6px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#777;font-weight:bold}
+
+  /* Capacity calendar */
+  table.capacity{border-collapse:collapse;width:100%;font-size:11px}
+  table.capacity th,table.capacity td{border:1px solid #E5E5E5;padding:6px 5px;text-align:center;min-width:42px}
+  table.capacity th{background:var(--navy);color:#fff;font-weight:bold;font-size:10px}
+  table.capacity th.line-col{text-align:left;padding-left:10px;width:140px;min-width:140px}
+  table.capacity td.line-name{text-align:left;padding-left:10px;font-weight:bold;color:var(--navy);background:var(--ltgrey)}
+  table.capacity td.cap{font-weight:bold}
+  table.capacity td.cap.full{background:var(--red);color:#fff}
+  table.capacity td.cap.tight{background:var(--amber);color:#fff}
+  table.capacity td.cap.ok{background:var(--green);color:#fff}
+  table.capacity td.cap.idle{background:#E5E5E5;color:#888}
+  table.capacity td.cap.unknown{background:#F8F8F8;color:#bbb}
+  table.capacity th.weekend,table.capacity td.weekend{background:#F8F8F8;color:#aaa}
+
+  /* What-if simulator */
+  .whatif-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
+  .whatif-controls select{padding:4px 8px;font-family:Arial;font-size:13px;border:1px solid var(--mdgrey);border-radius:3px;background:#fff}
+  .whatif-controls button{padding:6px 14px;font-family:Arial;font-size:13px;background:var(--blue);color:#fff;border:none;border-radius:3px;cursor:pointer}
+  .whatif-controls button:hover{opacity:.9}
+  #wifClear{background:var(--mdgrey)!important;color:#333!important}
+  .whatif-result{margin-top:14px}
+  .whatif-comparison{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:10px}
+  .wif-card{padding:10px;border-radius:3px;background:var(--ltgrey);font-size:12px}
+  .wif-card.worse{border-left:4px solid var(--red);background:#FFF5F5}
+  .wif-card.same{border-left:4px solid var(--green)}
+  .wif-card-sku{font-weight:bold;color:var(--navy);font-size:11px;margin-bottom:4px}
+  .wif-card-vals{font-size:11px;color:#666}
+
+  /* Forecast accuracy */
+  table.forecast{border-collapse:collapse;width:100%;font-size:11px}
+  table.forecast th,table.forecast td{border:1px solid #E5E5E5;padding:6px 8px}
+  table.forecast th{background:var(--navy);color:#fff;font-weight:bold;font-size:10px;text-align:left}
+  table.forecast td.right{text-align:right;font-weight:bold}
+  table.forecast .err-low{color:var(--green)}
+  table.forecast .err-mid{color:var(--amber)}
+  table.forecast .err-high{color:var(--red)}
+
+  /* Action queue */
+  .action-item{padding:10px 14px;background:var(--ltgrey);border-left:4px solid var(--blue);border-radius:3px;margin-bottom:8px;font-size:12px}
+  .action-item.urgent{border-left-color:var(--red);background:#FFF5F5}
+  .action-item.warn{border-left-color:var(--amber);background:#FFF9F0}
+  .action-item-title{font-weight:bold;color:var(--navy);margin-bottom:3px}
+  .action-item-detail{color:#555;font-size:11px}
 </style>
 </head>
 <body>
@@ -99,7 +156,7 @@
   <h2>Days of cover</h2>
   <div class="cover-grid" id="coverGrid"></div>
 
-  <h2>14-day stockout heatmap</h2>
+  <h2>14-day stock projection (start of day)</h2>
   <div class="heatmap">
     <table class="heat" id="heatTable"></table>
     <div class="legend">
@@ -116,6 +173,28 @@
     <div class="chart-wrap"><canvas id="projChart"></canvas></div>
     <div class="breakdown" id="breakdown"></div>
   </div>
+
+  <h2>Unfulfillable orders (next 14 days)</h2>
+  <div id="unfulfillable" class="section-card"></div>
+
+  <h2>Production capacity (next 14 days)</h2>
+  <div id="capacity" class="section-card"></div>
+
+  <h2>What-if simulator</h2>
+  <div id="whatif" class="section-card">
+    <div class="whatif-controls">
+      <label>If <select id="wifLine"></select> is down for <select id="wifDays"></select> day(s) starting <select id="wifStart"></select> →</label>
+      <button id="wifRun">Simulate</button>
+      <button id="wifClear">Clear</button>
+    </div>
+    <div id="wifResult" class="whatif-result"></div>
+  </div>
+
+  <h2>Forecast accuracy</h2>
+  <div id="forecast" class="section-card"></div>
+
+  <h2>Suggested actions</h2>
+  <div id="actions" class="section-card"></div>
 </main>
 
 <footer>
@@ -318,6 +397,11 @@ function render(){
   renderTiles(skuProjections);
   renderCoverGrid(skuProjections);
   renderHeatmap(skuProjections);
+  renderUnfulfillable();
+  renderCapacity();
+  populateWhatIfControls();
+  renderForecast();
+  renderActions();
 }
 
 function renderTiles(skuProj){
@@ -407,8 +491,8 @@ function renderHeatmap(skuProj){
       const cls = classifyDay(p.eod, demandFromHere, proj.length - idx);
       const we = isWeekend(p.date);
       const cellCls = we ? cls + ' weekend' : cls;
-      const tip = `${sku} ${fmtDate(p.date)}\nStart: ${fmtNum(p.sod)}\nDemand: ${fmtNum(p.demand)}\nEnd: ${fmtNum(p.eod)}`;
-      body += `<td class="day ${cellCls}" title="${tip}" onclick="drillInto('${sku}')">${fmtNum(p.eod)}</td>`;
+      const tip = `${sku} ${fmtDate(p.date)}\nStart-of-day: ${fmtNum(p.sod)}\nThat day's demand: ${fmtNum(p.demand)}\nEnd-of-day: ${fmtNum(p.eod)}`;
+      body += `<td class="day ${cellCls}" title="${tip}" onclick="drillInto('${sku}')">${fmtNum(p.sod)}</td>`;
     });
     body += '</tr>';
   });
@@ -494,6 +578,294 @@ function drillInto(sku){
 }
 
 window.drillInto = drillInto;
+
+// ============================================================
+// SECTION 6 — UNFULFILLABLE ORDERS
+// For each open order line, walk forward by ship_date. Decrement projected stock.
+// If the line cannot be fully shipped from projected stock at its ship_date, flag it.
+// ============================================================
+function renderUnfulfillable(){
+  const horizonEnd = new Date(); horizonEnd.setDate(horizonEnd.getDate() + 14);
+  // Group order lines per SKU sorted by ship_date
+  const linesBySku = {};
+  SKUS.forEach(s => linesBySku[s] = []);
+  DATA.orders.forEach(l => {
+    if(!l.ship_date) return;
+    const d = new Date(l.ship_date);
+    if(d > horizonEnd) return;
+    if(!linesBySku[l.sku]) return;
+    linesBySku[l.sku].push(l);
+  });
+  SKUS.forEach(s => linesBySku[s].sort((a,b) => a.ship_date.localeCompare(b.ship_date)));
+
+  const unfulfillable = [];
+  SKUS.forEach(sku => {
+    let stock = getStockFor(sku);
+    linesBySku[sku].forEach(line => {
+      const need = Number(line.units_ordered) || 0;
+      if(stock >= need){
+        stock -= need;
+      } else {
+        const shortfall = need - Math.max(0, stock);
+        unfulfillable.push({sku, line, shortfall, available: Math.max(0, stock)});
+        stock = 0;
+      }
+    });
+  });
+
+  const c = document.getElementById('unfulfillable');
+  if(unfulfillable.length === 0){
+    c.innerHTML = '<div class="section-empty">All open orders shippable from current stock.</div>';
+    return;
+  }
+  let html = `<div class="unful-headers"><div>SKU</div><div>Customer / SO</div><div>Ship date</div><div style="text-align:right">Need</div><div style="text-align:right">Short</div></div>`;
+  unfulfillable.forEach(u => {
+    const cust = (u.line.customer || '').split(':').pop().trim().slice(0, 50);
+    html += `<div class="unful-row">
+      <div class="unful-sku">${u.sku}</div>
+      <div class="unful-cust">${cust} <small style="color:#888">${u.line.doc_num||''}</small></div>
+      <div class="unful-date">${fmtDate(new Date(u.line.ship_date))}</div>
+      <div class="unful-qty">${fmtNum(u.line.units_ordered)}</div>
+      <div class="unful-short">${fmtNum(u.shortfall)}</div>
+    </div>`;
+  });
+  c.innerHTML = html;
+}
+
+// ============================================================
+// SECTION 3 — PRODUCTION CAPACITY CALENDAR
+// Theoretical line capacities (per CLAUDE.md and known config).
+// HMPS Dual = 80 pal/shift = ~7,680 units/shift @ 96 UPP. 2 shifts/day = 15,360 units/day.
+// Without a daily_production_schedule table populated yet, we can show capacity but
+// not "scheduled" — so the cells show theoretical max with a placeholder.
+// ============================================================
+const LINE_CAPACITY = {
+  'HMPS (10L Cask)':       {sku:'10L Cask',    units_per_day: 15360, shifts:'Day+Arvo+Night max'},
+  'Cask Line A (5L/10L)':  {sku:'5L Cask',     units_per_day: 6000,  shifts:'Day+Arvo'},
+  'SM Bottle (2L)':        {sku:'2L Bottle',   units_per_day: 4000,  shifts:'Day+Arvo'},
+  'EP New Line (600ml)':   {sku:'600ml mix',   units_per_day: 7000,  shifts:'Day+Arvo'},
+};
+
+function renderCapacity(){
+  const c = document.getElementById('capacity');
+  let html = '<table class="capacity"><thead><tr><th class="line-col">Line / SKU</th>';
+  const todayIso = isoDate(new Date());
+  DATA.days.forEach(d => {
+    const cls = (isoDate(d) === todayIso) ? 'today' : (isWeekend(d) ? 'weekend' : '');
+    html += `<th class="${cls}">${fmtDate(d)}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+  Object.entries(LINE_CAPACITY).forEach(([line, cfg]) => {
+    html += `<tr><td class="line-name">${line}<br><small style="color:#666;font-weight:normal">${cfg.units_per_day.toLocaleString('en-AU')}/day max</small></td>`;
+    DATA.days.forEach(d => {
+      const we = isWeekend(d);
+      // Without a schedule table, mark weekday cells "ok" and weekends as idle
+      const cls = we ? 'idle weekend' : 'unknown';
+      const tip = we ? 'Weekend (no scheduled production)' : `Theoretical max ${cfg.units_per_day.toLocaleString('en-AU')}/day. No schedule populated yet.`;
+      html += `<td class="cap ${cls}" title="${tip}">${we ? '·' : '–'}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  html += '<div style="font-size:11px;color:#888;margin-top:8px"><b>Status:</b> theoretical capacities shown. Daily scheduled production is not yet populated in <code>daily_production_schedule</code>. Once Rob enters the weekly plan, cells will turn green/amber/red based on booked vs max.</div>';
+  c.innerHTML = html;
+}
+
+// ============================================================
+// SECTION 4 — WHAT-IF SIMULATOR
+// Rerun the heatmap with one line removed for N days starting D.
+// ============================================================
+function populateWhatIfControls(){
+  const lineSel = document.getElementById('wifLine');
+  Object.keys(LINE_CAPACITY).forEach(l => {
+    const o = document.createElement('option'); o.value = l; o.textContent = l;
+    lineSel.appendChild(o);
+  });
+  const daysSel = document.getElementById('wifDays');
+  [1,2,3,5,7].forEach(n => {
+    const o = document.createElement('option'); o.value = n; o.textContent = n;
+    daysSel.appendChild(o);
+  });
+  const startSel = document.getElementById('wifStart');
+  DATA.days.forEach(d => {
+    const o = document.createElement('option'); o.value = isoDate(d); o.textContent = fmtDate(d);
+    startSel.appendChild(o);
+  });
+
+  document.getElementById('wifRun').onclick = () => {
+    const line = lineSel.value;
+    const days = parseInt(daysSel.value);
+    const start = startSel.value;
+    runWhatIf(line, days, start);
+  };
+  document.getElementById('wifClear').onclick = () => {
+    document.getElementById('wifResult').innerHTML = '';
+  };
+}
+
+function runWhatIf(line, daysDown, startIso){
+  // Affected SKU
+  const affectedSku = LINE_CAPACITY[line] && LINE_CAPACITY[line].sku;
+  if(!affectedSku){
+    document.getElementById('wifResult').innerHTML = '<div class="section-empty">No SKU mapping for that line.</div>';
+    return;
+  }
+  // Map "10L Cask" / "5L Cask" / "2L Bottle" / "600ml mix" to one of our 5 SKUs
+  // For 600ml mix we'll affect both 12pk and 6pk equally
+  const affected = (affectedSku === '600ml mix') ? ['600ml 12pk','600ml 6pk'] : [affectedSku];
+
+  // Compute baseline cover and what-if cover for each SKU
+  const before = {};
+  const after = {};
+  SKUS.forEach(sku => {
+    const dailyDemand = {};
+    const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days);
+    const co = expandCommittedOrders(DATA.orders, sku, DATA.days);
+    DATA.days.forEach(d => {
+      const k = isoDate(d);
+      dailyDemand[k] = (fc[k]||0) + (co[k]||0);
+    });
+    const stockNow = getStockFor(sku);
+    before[sku] = daysOfCover(stockNow, dailyDemand, DATA.days);
+    after[sku] = before[sku]; // default unchanged
+  });
+
+  // For affected SKUs, compute what-if where the line is unable to produce for the down period.
+  // Without a schedule table, we approximate: assume baseline production rate would have been
+  // the line's units_per_day for the affected SKU on each weekday in the down window.
+  // Lost production = capacity * weekdays_in_down_window
+  const cap = LINE_CAPACITY[line].units_per_day;
+  const startDate = new Date(startIso);
+  let lostProd = 0;
+  for(let i=0; i<daysDown; i++){
+    const d = new Date(startDate); d.setDate(startDate.getDate()+i);
+    if(d.getDay() !== 0 && d.getDay() !== 6) lostProd += cap;
+  }
+  // Distribute lost production across affected SKUs (single-SKU = 100%, 600ml = 50/50)
+  const perSkuLoss = lostProd / affected.length;
+  affected.forEach(sku => {
+    const dailyDemand = {};
+    const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days);
+    const co = expandCommittedOrders(DATA.orders, sku, DATA.days);
+    DATA.days.forEach(d => {
+      const k = isoDate(d);
+      dailyDemand[k] = (fc[k]||0) + (co[k]||0);
+    });
+    // Reduce stock by perSkuLoss as a proxy for missed production
+    const stockReduced = getStockFor(sku) - perSkuLoss;
+    after[sku] = daysOfCover(stockReduced, dailyDemand, DATA.days);
+  });
+
+  let html = `<div style="font-size:12px;color:#444;margin-bottom:8px"><b>Scenario:</b> ${line} down for ${daysDown} day${daysDown>1?'s':''} from ${fmtDate(startDate)}. Lost production: ${fmtNum(lostProd)} units.</div>`;
+  html += '<div class="whatif-comparison">';
+  SKUS.forEach(sku => {
+    const b = before[sku], a = after[sku];
+    const worsen = a < b;
+    html += `<div class="wif-card ${worsen?'worse':'same'}">
+      <div class="wif-card-sku">${sku}</div>
+      <div class="wif-card-vals">Cover: <b>${b}d</b> → <b style="${worsen?'color:#C0392B':'color:#27AE60'}">${a}d</b></div>
+    </div>`;
+  });
+  html += '</div>';
+  document.getElementById('wifResult').innerHTML = html;
+}
+
+// ============================================================
+// SECTION 5 — FORECAST ACCURACY
+// We don't have weekly snapshots of past forecasts vs actuals yet, so v1 shows
+// a "forecast volume vs current stock + production capacity" view as a proxy.
+// Future v2 will use forecast_actuals_log once snapshots have run for 4-8 weeks.
+// ============================================================
+function renderForecast(){
+  // Sum forecasts for next 4 weeks per SKU and compare to current stock
+  const c = document.getElementById('forecast');
+  let html = '<table class="forecast"><thead><tr><th>SKU</th><th>4-week forecast</th><th>Current stock</th><th>Stock as % of forecast</th><th>Status</th></tr></thead><tbody>';
+  SKUS.forEach(sku => {
+    let fc4 = 0;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const horizonEnd = new Date(today); horizonEnd.setDate(today.getDate() + 28);
+    DATA.forecasts.filter(f => f.sku === sku).forEach(f => {
+      const wd = new Date(f.week_date); wd.setHours(0,0,0,0);
+      if(wd >= today && wd < horizonEnd) fc4 += Number(f.units) || 0;
+    });
+    const stock = getStockFor(sku);
+    const pct = fc4 > 0 ? Math.round((stock/fc4)*100) : 0;
+    const cls = pct < 25 ? 'err-high' : (pct < 50 ? 'err-mid' : 'err-low');
+    const status = pct < 25 ? 'Tight — production critical' : (pct < 50 ? 'OK with production' : 'Comfortable');
+    html += `<tr><td><b>${sku}</b></td><td class="right">${fmtNum(fc4)}</td><td class="right">${fmtNum(stock)}</td><td class="right ${cls}">${pct}%</td><td class="${cls}">${status}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  html += '<div style="font-size:11px;color:#888;margin-top:8px"><b>Note:</b> v1 shows current-stock vs 4-week forecast as a coverage proxy. Forecast accuracy (last-8-weeks forecast vs actual sales) needs <code>forecast_actuals_log</code> populated by a weekly snapshot job; once 4-8 weeks of history exist, this will show forecast error % per SKU and a trust score that drives the AMBER threshold dynamically.</div>';
+  c.innerHTML = html;
+}
+
+// ============================================================
+// SECTION 7 — ACTION QUEUE
+// Synthesise from the other sections: any RED SKU, any unfulfillable order, any
+// AMBER SKU with no scheduled production, any forecast surge.
+// ============================================================
+function renderActions(){
+  const actions = [];
+  // Build per-SKU snapshot
+  SKUS.forEach(sku => {
+    const dailyDemand = {};
+    const fc = expandForecastsToDaily(DATA.forecasts, sku, DATA.days);
+    const co = expandCommittedOrders(DATA.orders, sku, DATA.days);
+    DATA.days.forEach(d => {
+      const k = isoDate(d);
+      dailyDemand[k] = (fc[k]||0) + (co[k]||0);
+    });
+    const stockNow = getStockFor(sku);
+    const cover = daysOfCover(stockNow, dailyDemand, DATA.days);
+    if(cover < 3){
+      actions.push({pri:'urgent', title:`${sku} hits stockout in ${cover} day${cover!==1?'s':''}`, detail:`${fmtNum(stockNow)} units on hand. Schedule a run on the relevant line today.`});
+    } else if(cover < 7){
+      actions.push({pri:'warn', title:`${sku} cover dropping (${cover} days)`, detail:`${fmtNum(stockNow)} units on hand. Plan production within the next 2 days.`});
+    }
+  });
+
+  // Unfulfillable orders → urgent action
+  const horizonEnd = new Date(); horizonEnd.setDate(horizonEnd.getDate() + 14);
+  const linesBySku = {}; SKUS.forEach(s => linesBySku[s] = []);
+  DATA.orders.forEach(l => {
+    if(!l.ship_date) return;
+    if(new Date(l.ship_date) > horizonEnd) return;
+    if(!linesBySku[l.sku]) return;
+    linesBySku[l.sku].push(l);
+  });
+  let unfulCount = 0;
+  SKUS.forEach(sku => {
+    let stock = getStockFor(sku);
+    linesBySku[sku].sort((a,b) => a.ship_date.localeCompare(b.ship_date));
+    linesBySku[sku].forEach(line => {
+      const need = Number(line.units_ordered) || 0;
+      if(stock < need) unfulCount++;
+      stock = Math.max(0, stock - need);
+    });
+  });
+  if(unfulCount > 0){
+    actions.push({pri:'urgent', title:`${unfulCount} open order line${unfulCount>1?'s':''} cannot ship from current stock`, detail:'See Unfulfillable orders section above. Email customers or expedite production.'});
+  }
+
+  // No scheduled production warning
+  actions.push({pri:'warn', title:'Daily production schedule not populated', detail:'The daily_production_schedule table is empty. Capacity and what-if accuracy will be limited until it is filled. Add the weekly plan to enable production-aware projections.'});
+
+  const c = document.getElementById('actions');
+  if(actions.length === 0){
+    c.innerHTML = '<div class="section-empty">No flagged actions. All SKUs comfortable, all orders shippable.</div>';
+    return;
+  }
+  // Sort urgent first
+  const order = {urgent:0, warn:1, info:2};
+  actions.sort((a,b) => order[a.pri] - order[b.pri]);
+  c.innerHTML = actions.map(a =>
+    `<div class="action-item ${a.pri}">
+      <div class="action-item-title">${a.title}</div>
+      <div class="action-item-detail">${a.detail}</div>
+    </div>`
+  ).join('');
+}
+
 load();
 </script>
 </body>
