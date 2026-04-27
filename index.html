@@ -599,58 +599,6 @@ function render(){
     overduePanel.innerHTML = '<div class="toolbar"><button onclick="exportCsv(\'overdue\')">Export CSV</button></div>' + html;
   }
 
-  // At-risk
-  document.getElementById('atriskCount').textContent = atRisk.length === 0 ? '' : `${atRisk.length} line${atRisk.length!==1?'s':''}`;
-  const atriskPanel = document.getElementById('atriskPanel');
-  if(atRisk.length === 0){
-    atriskPanel.innerHTML = '<div class="panel-empty">All orders shipping in next 14 days are covered by current stock plus planned production.</div>';
-  } else {
-    let html = '<table><thead><tr><th>SKU</th><th>SO #</th><th>Customer</th><th>Ship date</th><th class="right">Units</th><th class="right">Short</th><th>Reason</th></tr></thead><tbody>';
-    atRisk.forEach(r => {
-      const cust = (r.line.customer||'').split(':').pop().trim().slice(0, 70);
-      html += `<tr>
-        <td class="sku">${r.sku}</td>
-        <td class="so"><a href="${NS_TRAN_SEARCH(r.line.doc_num)}" target="_blank" style="color:var(--blue);text-decoration:none">${r.line.doc_num}</a></td>
-        <td>${cust}</td>
-        <td>${fmtDateLong(new Date(r.line.ship_date))}</td>
-        <td class="right">${fmt(r.line.units_ordered)}</td>
-        <td class="short">${fmt(r.short)}</td>
-        <td class="reason">${r.reason}</td>
-      </tr>`;
-    });
-    html += '</tbody></table>';
-    atriskPanel.innerHTML = '<div class="toolbar"><button onclick="exportCsv(\'atrisk\')">Export CSV</button></div>' + html;
-  }
-
-  // 4-week forecast vs supply
-  const nwPanel = document.getElementById('nextweekPanel');
-  let nwHtml = `<div style="padding:10px 14px;font-size:11px;color:#666;border-bottom:1px solid var(--ltgrey)">For each of the next 4 weeks, demand = MAX(forecast, confirmed SOs). Supply = current stock + cumulative production through that week, less SOs already booked to ship before that week.</div>`;
-  // Pivot: rows = SKU, cols = 4 weeks
-  const byWeek = {1:[],2:[],3:[],4:[]};
-  nextWeekRows.forEach(r => byWeek[r.week].push(r));
-  const w1 = byWeek[1][0];
-  if(w1){
-    nwHtml += '<table><thead><tr><th>SKU</th>';
-    [1,2,3,4].forEach(w => {
-      const sample = byWeek[w][0];
-      nwHtml += `<th>Week ${w} (${fmtDate(sample.weekStart)} – ${fmtDate(sample.weekEnd)})</th>`;
-    });
-    nwHtml += '</tr></thead><tbody>';
-    SKUS.forEach(sku => {
-      nwHtml += `<tr><td class="sku">${sku}</td>`;
-      [1,2,3,4].forEach(w => {
-        const r = byWeek[w].find(x => x.sku === sku);
-        const cls = r.surplus >= 0 ? 'green' : 'red';
-        const surplusCls = r.surplus >= 0 ? 'surplus' : 'short';
-        nwHtml += `<td><div style="font-size:10px;color:#888">demand ${fmt(r.demand)} · supply ${fmt(r.supply)}</div>
-          <div class="${surplusCls}" style="font-size:13px;text-align:right">${fmtSign(r.surplus)}</div></td>`;
-      });
-      nwHtml += '</tr>';
-    });
-    nwHtml += '</tbody></table>';
-  }
-  nwPanel.innerHTML = nwHtml;
-
   // SUMMARY tab: closing stock heatmap walking forward
   renderHeatmap();
 
