@@ -1254,11 +1254,18 @@ function renderAuditForecasts(){
     ...DATA.forecasts.metcash.map(r => ({...r, retailer: 'Metcash'})),
   ];
 
-  // Distinct months for filter (YYYY-MM from week_date)
+  // Start of current week (Monday), local time
+  const _today = new Date(); _today.setHours(0,0,0,0);
+  const _dow = _today.getDay(); // 0=Sun
+  const _daysBack = _dow === 0 ? 6 : _dow - 1;
+  const _weekStart = new Date(_today); _weekStart.setDate(_today.getDate() - _daysBack);
+  const _weekStartISO = isoDate(_weekStart);
+
+  // Distinct months/weeks for filter dropdowns — current week and forward only
   const monthSet = new Set();
   const weekSet = new Set();
   all.forEach(r => {
-    if(r.week_date){
+    if(r.week_date && r.week_date.slice(0,10) >= _weekStartISO){
       weekSet.add(r.week_date.slice(0,10));
       monthSet.add(r.week_date.slice(0,7));
     }
@@ -1269,6 +1276,7 @@ function renderAuditForecasts(){
   function applyFilters(){
     const f = AUDIT_STATE.fc;
     return all.filter(r => {
+      if(r.week_date && r.week_date.slice(0,10) < _weekStartISO) return false;
       if(f.retailer && r.retailer !== f.retailer) return false;
       if(f.sku && r.sku !== f.sku) return false;
       if(f.week && (r.week_date||'').slice(0,10) !== f.week) return false;
